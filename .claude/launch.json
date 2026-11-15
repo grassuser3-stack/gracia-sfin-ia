@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "makan-kaki",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "makan-kaki", "run", "dev", "--", "--port", "5173", "--strictPort"],
+      "port": 5173
+    }
+  ]
+}
