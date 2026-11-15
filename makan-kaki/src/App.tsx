@@ -10,7 +10,7 @@ import { AdminBilling, AdminBookings, AdminCreators, AdminHome, AdminOutlets } f
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '') || '/'}>
         <Routes>
           <Route element={<PublicShell />}>
             <Route path="/" element={<Landing />} />

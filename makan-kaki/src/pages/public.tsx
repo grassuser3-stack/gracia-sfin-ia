@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { supabase, errorText } from '../lib/supabase'
 import { HDB_TOWNS, LANGUAGES, PLANS, PLATFORMS, type Plan } from '../lib/format'
-import { Alert, Field, Logo } from '../components/ui'
+import { Alert, Field, Logo, LOGO_URL } from '../components/ui'
 import { homeFor, type Role } from '../lib/auth'
 import { resetDemoData } from '../lib/local/client'
 import { DEMO_ACCOUNTS, DEMO_PASSWORD } from '../lib/local/setup'
@@ -21,7 +21,7 @@ export function Landing() {
     <>
       <TopBar />
       <section className="pt-6">
-        <img src="/logo.png" alt="Makan Kaki logo" className="mb-5 h-28 w-28" />
+        <img src={LOGO_URL} alt="Makan Kaki logo" className="mb-5 h-28 w-28" />
         <span className="chip bg-orange-soft text-brown">For hawkers, cafés &amp; local creators</span>
         <h1 className="mt-4 text-4xl font-extrabold leading-[1.1]">
           Local creators.<br />Real diners.<br /><span className="text-orange">Counted.</span>

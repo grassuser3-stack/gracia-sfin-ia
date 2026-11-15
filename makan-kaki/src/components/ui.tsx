@@ -1,10 +1,13 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
+/** Works both at the site root and under a sub-path such as /gracia-sfin-ia/. */
+export const LOGO_URL = `${import.meta.env.BASE_URL}logo.png`
+
 export function Logo({ small = false }: { small?: boolean }) {
   return (
     <span className="inline-flex items-center gap-2">
-      <img src="/logo.png" alt="" className={small ? 'h-9 w-9' : 'h-11 w-11'} />
+      <img src={LOGO_URL} alt="" className={small ? 'h-9 w-9' : 'h-11 w-11'} />
       <span className={`font-heading font-extrabold tracking-tight text-brown ${small ? 'text-lg' : 'text-2xl'}`}>
         Makan Kaki
       </span>
