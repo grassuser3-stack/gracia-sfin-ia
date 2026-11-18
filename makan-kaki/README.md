@@ -56,7 +56,7 @@ These rules are enforced inside the database by Postgres row-level security, not
 - **Plans:** Hawker is S$99 a month for 2 creator visits. Café is S$299 a month for 5 creator visits. Every redeemed code costs S$1.
   - When an outlet's visits for a month are all booked, its other slots that month are hidden.
 - **Cost per diner** = (plan fee + S$1 × redemptions this month) ÷ redemptions this month. With no redemptions it shows "No redemptions yet".
-- **Codes** look like `MK-JASON-4821`.
+- **Codes** look like `AA-ZELIA-4821`.
   - They are unique and not case-sensitive.
   - They work from booking until 30 days after the visit date, unless the booking is cancelled.
 - **Booking status:**

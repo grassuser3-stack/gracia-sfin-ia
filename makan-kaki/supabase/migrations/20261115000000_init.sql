@@ -287,7 +287,7 @@ declare
 begin
   if base = '' then base := 'KAKI'; end if;
   for i in 1..100 loop
-    c := 'MK-' || base || '-' || lpad((floor(random() * 10000))::int::text, 4, '0');
+    c := 'AA-' || base || '-' || lpad((floor(random() * 10000))::int::text, 4, '0');
     if not exists (select 1 from bookings where code = c) then return c; end if;
   end loop;
   raise exception 'Could not generate a unique code';

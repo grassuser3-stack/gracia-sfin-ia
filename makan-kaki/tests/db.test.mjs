@@ -81,7 +81,7 @@ ok((await as(cC, `select count(*)::int n from open_slots_for_me()`))[0].n === 0,
 
 // --- booking ---
 const [bk1] = await as(cA, `select * from book_slot($1)`, [s1])
-ok(/^MK-JASON-\d{4}$/.test(bk1.code), 'code format', bk1.code)
+ok(/^AA-JASON-\d{4}$/.test(bk1.code), 'code format', bk1.code)
 ok((await as(cB, `select count(*)::int n from open_slots_for_me()`))[0].n === 2, 'booked slot disappears for other creators')
 ok((await asErr(cB, `select * from book_slot($1)`, [s1]))?.includes('just booked'), 'second booking of same slot fails')
 ok((await asErr(cD, `select * from book_slot((select id from visit_slots where outlet_id = (select id from outlets where owner_id = '${owner1}') and slot_date = '${d2}'))`))?.length > 0, 'creator cannot book outside own town')
@@ -109,7 +109,7 @@ ok(!!(await asErr(null, `select * from open_slots_for_me()`)), 'anon cannot call
 ok((await as(owner1, `select redeem_code($1) r`, [bk1.code.toLowerCase()]))[0].r === true, 'redeem lowercase code works')
 ok((await as(owner1, `select redeem_code($1) r`, ['  ' + bk1.code + ' ']))[0].r === true, 'redeem with spaces works')
 ok((await as(owner2, `select redeem_code($1) r`, [bk1.code]))[0].r === false, "other outlet's code -> not found")
-ok((await as(owner1, `select redeem_code('MK-NOPE-0000') r`))[0].r === false, 'unknown code -> not found')
+ok((await as(owner1, `select redeem_code('AA-NOPE-0000') r`))[0].r === false, 'unknown code -> not found')
 ok(!!(await asErr(cA, `select redeem_code($1)`, [bk1.code])), 'creator cannot redeem')
 ok((await as(owner1, `select redemptions_month::int n from owner_bookings() where code = $1`, [bk1.code]))[0].n === 2, 'redemption count = 2')
 ok((await as(cA, `select redemptions::int n from my_bookings()`))[0].n === 2, 'creator sees own count')
@@ -145,12 +145,12 @@ async function pastBooking(daysAgo, code, creator = cA) {
   const s = (await q(`insert into visit_slots (outlet_id, slot_date, start_time, status) values ($1, sg_today() - $2::int, '10:00', 'booked') returning id`, [o1, daysAgo]))[0].id
   return (await q(`insert into bookings (slot_id, creator_id, code) values ($1, $2, $3) returning id`, [s, creator, code]))[0].id
 }
-await pastBooking(31, 'MK-OLD-0031')
-await pastBooking(30, 'MK-OLD-0030')
-ok((await as(owner1, `select redeem_code('MK-OLD-0031') r`))[0].r === false, 'code 31 days after visit -> not found')
-ok((await as(owner1, `select redeem_code('MK-OLD-0030') r`))[0].r === true, 'code exactly 30 days after visit -> ok')
-const m8 = await pastBooking(8, 'MK-MISS-0008')
-const p3 = await pastBooking(3, 'MK-POST-0003')
+await pastBooking(31, 'AA-OLD-0031')
+await pastBooking(30, 'AA-OLD-0030')
+ok((await as(owner1, `select redeem_code('AA-OLD-0031') r`))[0].r === false, 'code 31 days after visit -> not found')
+ok((await as(owner1, `select redeem_code('AA-OLD-0030') r`))[0].r === true, 'code exactly 30 days after visit -> ok')
+const m8 = await pastBooking(8, 'AA-MISS-0008')
+const p3 = await pastBooking(3, 'AA-POST-0003')
 const mine = await as(cA, `select booking_id, status from my_bookings()`)
 ok(mine.find(r => r.booking_id === m8)?.status === 'missed', 'no link 8 days after visit -> missed')
 ok(mine.find(r => r.booking_id === p3)?.status === 'booked', '3 days after visit -> still booked')
@@ -160,7 +160,7 @@ await as(cA, `select submit_post_link($1, 'https://www.tiktok.com/@jason/video/1
 ok((await q(`select status from bookings where id=$1`, [p3]))[0].status === 'completed', 'post link -> completed')
 ok((await asErr(cA, `select submit_post_link($1, 'https://tiktok.com/x')`, [m8]))?.includes('7-day'), 'missed booking cannot submit')
 ok((await asErr(cB, `select submit_post_link($1, 'https://tiktok.com/x')`, [bk2.booking_id]))?.includes('on or after'), 'cannot submit before visit date')
-ok((await as(owner1, `select redeem_code('MK-MISS-0008') r`))[0].r === true, 'missed booking code still redeemable within 30 days')
+ok((await as(owner1, `select redeem_code('AA-MISS-0008') r`))[0].r === true, 'missed booking code still redeemable within 30 days')
 await as(admin, `select admin_cancel_booking($1)`, [m8])
 ok((await q(`select s.status from visit_slots s join bookings b on b.slot_id = s.id where b.id=$1`, [m8]))[0].status === 'booked', 'cancel does not reopen past slot')
 

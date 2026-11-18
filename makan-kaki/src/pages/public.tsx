@@ -39,7 +39,7 @@ export function Landing() {
       <section className="mt-10 grid gap-3">
         {[
           ['1', 'Owners post visit slots', 'Pick a date and time a creator can come film.'],
-          ['2', 'Creators book a makan', 'Approved creators in your HDB town book in under a minute and get a code like MK-JASON-4821.'],
+          ['2', 'Creators book a makan', 'Approved creators in your HDB town book in under a minute and get a code like AA-ZELIA-4821.'],
           ['3', 'Diners show the code', 'Staff type it in at the counter. Each code counts as one diner.'],
           ['4', 'See what worked', 'Your dashboard shows diners per creator post and your cost per diner.'],
         ].map(([n, t, d]) => (

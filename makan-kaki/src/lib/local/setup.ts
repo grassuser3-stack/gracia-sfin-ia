@@ -8,7 +8,7 @@ import { hashPassword } from './hash'
  * Bump this whenever the sample data or schema changes. Browsers holding an
  * older version are reset to the new sample data automatically.
  */
-const SEED_VERSION = 2
+const SEED_VERSION = 3
 
 const BOOTSTRAP = `
   do $$ begin create role anon nologin; exception when duplicate_object then null; end $$;
@@ -122,7 +122,7 @@ async function seed(db: PGliteInterface) {
   // Xiao Nong Tian (Hawker, Woodlands): Zelia's completed post, Priya's visit waiting for a post link
   const b1 = await booking(await slot(xiaoNongTian, -6, '11:00', 'booked'), zelia, 'AA-ZELIA-4821', 'completed', 'https://www.instagram.com/p/DGu-ZFMBo0r/', 8)
   await redeem(b1, 22)
-  const b2 = await booking(await slot(xiaoNongTian, -2, '15:00', 'booked'), priya, 'MK-PRIYA-3307', 'booked', null, 5)
+  const b2 = await booking(await slot(xiaoNongTian, -2, '15:00', 'booked'), priya, 'AA-PRIYA-3307', 'booked', null, 5)
   await redeem(b2, 3)
   await slot(xiaoNongTian, 3, '10:30')
   await slot(xiaoNongTian, 9, '14:00')
@@ -134,7 +134,7 @@ async function seed(db: PGliteInterface) {
   await slot(allHands, 6, '16:00')
 
   // Ah Seng Fishball Noodle (Hawker, Tampines): Priya's missed post, open slots
-  const b4 = await booking(await slot(ahSeng, -9, '08:30', 'booked'), priya, 'MK-PRIYA-9042', 'booked', null, 12)
+  const b4 = await booking(await slot(ahSeng, -9, '08:30', 'booked'), priya, 'AA-PRIYA-9042', 'booked', null, 12)
   await redeem(b4, 2)
   await slot(ahSeng, 3, '11:00')
   await slot(ahSeng, 5, '14:30')

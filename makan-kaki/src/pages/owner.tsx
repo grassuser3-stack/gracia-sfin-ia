@@ -236,7 +236,7 @@ export function RedeemCode({ outletName }: { outletName?: string }) {
           autoFocus
           aria-label="Diner's code"
           className="w-full rounded-2xl border-4 border-brown-line bg-white px-4 py-6 text-center font-mono text-3xl font-bold uppercase tracking-wider text-brown placeholder:text-brown-line focus:border-orange focus:outline-none"
-          placeholder="MK-NAME-1234"
+          placeholder="AA-NAME-1234"
           autoCapitalize="characters"
           autoCorrect="off"
           autoComplete="off"
