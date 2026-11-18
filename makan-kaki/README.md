@@ -1,95 +1,117 @@
-# Makan Kaki
+# Makan Kaki: clickable demo
 
-Makan Kaki is a mobile-first web app that matches Singapore hawker stalls and cafés with nano-creators from the same HDB town. It counts how many diners each creator's code brings in.
+Makan Kaki is one web platform with two logged-in apps, one for business owners and one for creators, joined by a diner QR checkout that needs no download. Every order is traced back to the creator video that brought it.
 
-**Built with:** React, Vite and Tailwind. The database is a full Postgres (PGlite) that runs **inside the browser**. You don't need any accounts, servers or keys.
+This is a **demo**, not a working product:
+- All data is sample data saved in the viewer's browser.
+- HitPay, PayNow, WhatsApp, OTP codes, follower checks and post checks are simulated and clearly marked "Demo".
+- Nothing is sent anywhere.
 
-## Run it
+**Live:** https://grassuser3-stack.github.io/gracia-sfin-ia/
+
+## Run it locally
 ```bash
 npm install
 npm run dev
 ```
-Open http://localhost:5173. To try it on your phone, use the same Wi-Fi and run `npm run dev -- --host`.
+Open http://localhost:5173.
 
-## Demo accounts
-The login page lists one-tap demo logins for owners, creators and the admin. All accounts use the password `makan123`.
+## How to show it
+- **Guided tour:** on the landing page, tap **▶ Start the 11-step demo tour**. A bar at the bottom walks through the end-to-end flow, switching between owner, Makan Kaki, creator and diner screens. You can also tap any step in the flow diagram.
+  1. Owner signs up, picks a plan and pays
+  2. Owner books a visit
+  3. Makan Kaki matches a creator
+  4. Creator accepts
+  5. Creator checks in
+  6. Creator posts the video
+  7. Diner scans and orders with the creator code
+  8. Diner pays by PayNow
+  9. Owner completes the order
+  10. Owner sees results
+  11. Makan Kaki pays out
+- **Demo accounts:** the Log in page has one-tap logins, with no passwords:
 
-| Account | Role |
-|---|---|
-| admin@makankaki.test | Admin (founder) |
-| owner@makankaki.test | Owner of Xiao Nong Tian (Hawker plan, Woodlands) |
-| cafe@makankaki.test | Owner of All Hands Café (Café plan, Woodlands) |
-| staff@makankaki.test | Counter staff at Xiao Nong Tian (only the Redeem screen), not listed on the login page |
-| foodieboonie@gmail.com | Zelia (@foodieboonie on Instagram), approved creator in Woodlands |
-| priya@makankaki.test | Approved creator in Tampines |
-| wei@makankaki.test | Creator waiting for approval |
-| ahseng@makankaki.test | Owner of Ah Seng Fishball Noodle (Hawker plan, Tampines), not listed on the login page |
+  | Account | What you see |
+  |---|---|
+  | Owner: Xiao Nong Tian (Hawker) | Owner app with past orders and results |
+  | Owner: All Hands Café (Café) | Owner app, launch pack on |
+  | Creator: Zelia (@foodieboonie) | Creator app with offers, an upcoming visit and earnings |
+  | Creator: Priya (@priyamakan) | Creator with one strike |
+  | Creator: Chen Wei | Waiting for approval |
+  | Admin | Approvals, matching, payouts, disputes |
+  | Diner | The QR checkout, no account |
 
-The sample data lives in `src/lib/local/setup.ts`. After changing it, bump `SEED_VERSION` there so browsers with the old data load the new version.
+- **Two tabs, live:** open an owner's **Live orders** in one tab and the diner checkout (`/order/xnt` or `/order/ahc`) in another.
+  - A diner's order pops up for the owner with a sound alert.
+  - Moving the order along updates the diner's status page.
+- **Real QR code:** the owner's **More → QR stand** shows a real, scannable QR code that opens that stall's checkout. Creators get QR links with their code filled in.
+- **Languages:** use the 🌐 picker for English, 中文, Melayu or தமிழ். Main buttons, tabs and the whole diner checkout are translated. Some detail text stays in English.
+- **Reset demo** at the bottom of the Log in page restores the sample data.
 
-The sample data includes:
-- a completed post with diners
-- a visit waiting for its post link
-- a missed post
-- open visit slots
+## What's in each app
+**Owner app (12 screens):**
+1. Sign up with WhatsApp OTP
+2. Choose a plan
+3. Pay and payout setup
+4. Stall profile and menu (with one-tap sold out)
+5. QR stand
+6. Book creator visits (with the 90-day launch pack)
+7. Creator profiles
+8. Live orders (New → Preparing → Ready → Completed, cancel and refund)
+9. Results dashboard (views, coded orders, sales, cost per new diner, best creator, best dish, WhatsApp monthly report)
+10. Payouts (with CSV)
+11. Staff accounts
+12. Settings and support (with WhatsApp chat)
 
-You can also sign up new owners, creators and staff.
+**Creator app (12 screens):**
+1. Sign up with OTP and platform link (1,000–10,000 follower check)
+2. Profile and approval
+3. Payout setup
+4. Visit offers across Singapore
+5. Accept and book (24h free cancellation, strikes)
+6. Visit brief with code, QR and #ad label
+7. QR check-in that releases the free meal
+8. Submit post within 48h with checks
+9. Creator code and links
+10. Performance
+11. Earnings (S$30 per visit + 20% of commission, statement CSV)
+12. Ratings and strikes
 
-**Tips:**
-- Each browser tab can be logged in as a different person. For example, use one tab as a creator and another as the owner.
-- Data is saved in this browser only. A different browser or device starts with fresh sample data.
-- **Reset demo data** at the bottom of the login page restores the sample data.
+**Diner checkout:**
+1. Scan the QR, or tap a creator's link
+2. Pick a language
+3. Browse the menu, with featured dishes first
+4. Enter the creator code (auto-filled from a link)
+5. Choose dine-in with a table number, or takeaway
+6. Pay by PayNow through HitPay
+7. See the live order status, with an optional WhatsApp
+8. Get a receipt
 
-## Who sees what
+Orders without a code still go through, at no commission.
 
-| Role | Can | Cannot |
-|---|---|---|
-| Guest | See the landing page, sign-up and log-in pages | See anything else (they are sent to log in) |
-| Owner | Register 1 outlet, add visit slots, redeem codes, see their own results, add up to 3 staff | See other outlets, or creators' email and phone |
-| Staff | Use the Redeem code screen for their outlet | See the dashboard, results, billing or creator details |
-| Creator | After approval: book open slots in their HDB town, get a code, submit their post link, see their own counts | See other creators' bookings or any outlet's results |
-| Admin | Approve or reject creators, see everything, edit or cancel bookings, export billing CSV | n/a |
+**Admin panel:**
+- Creator approvals (follower, engagement and PayNow checks)
+- Visit matching ranked by language and cuisine
+- Owner payouts (next working day) and creator payouts (monthly)
+- Disputes and platform rules
+- Outlet overview
 
-These rules are enforced inside the database by Postgres row-level security, not only by hiding screens. Every query runs as the logged-in user.
-
-## Business rules
-- **Plans:** Hawker is S$99 a month for 2 creator visits. Café is S$299 a month for 5 creator visits.
-  - When an outlet's visits for a month are all booked, its other slots that month are hidden.
-- **Commission:** when staff redeem a code they also type the diner's bill (S$0.01–S$5,000). The outlet pays **10% of every redeemed bill** on top of its plan.
-- **Creators earn a fifth of that commission**, which is **2% of the bill**. Makan Kaki keeps the other 8%. Creators see their earnings on My bookings. The admin billing page exports a creator payouts CSV so they can be paid manually.
-- **Each month an outlet owes** plan fee + 10% of that month's redeemed bills.
-- **Cost per diner** = (plan fee + 10% of bills this month) ÷ redemptions this month. With no redemptions it shows "No redemptions yet".
-- **Codes** look like `AA-ZELIA-4821`.
-  - They are unique and not case-sensitive.
-  - They work from booking until 30 days after the visit date, unless the booking is cancelled.
-- **Booking status:**
-  - "Completed" when the creator submits a post link on or after the visit date.
-  - "Missed" if there's no link 7 days after the visit. Missed bookings are flagged on the Admin dashboard.
-- **Cancelling** (admin only):
-  - The code stops working.
-  - The slot reopens if its date hasn't passed.
-- **Dates and times** are in Singapore time. **Prices** are in SGD.
-
-## Testing the database rules
-```bash
-npm run test:db
-```
-This runs 78 checks covering permissions, double-booking, plan limits, codes, the 30-day window, missed posts, staff access and billing.
+## Money rules used in the demo
+- **Plans:** Hawker S$99 for 2 visits a month. Café S$299 for 5. Unused visits roll over one month. Pilot outlets get 50% off their first paid month.
+- **Commission:** 10% on coded orders only. Refunded or cancelled orders earn nothing.
+- **Owner payout:** order value minus commission, by PayNow the next working day.
+- **Creator pay:** S$30 per verified visit plus 20% of the commission their code earns, paid monthly.
+- **Cost per new diner** = (plan fee + commission) ÷ coded orders.
 
 ## Where things are
 | What | Where |
 |---|---|
-| Database tables, security rules and server functions | `supabase/migrations/20261115000000_init.sql` |
-| In-browser database, login and sample data | `src/lib/local/` |
-| Screens | `src/pages/` |
+| Sample data and money constants | `src/demo/data.ts` |
+| Shared state, cross-tab sync and maths | `src/demo/store.tsx` |
+| Translations | `src/demo/i18n.tsx` |
+| The 11 tour steps | `src/demo/tour.ts` |
+| Screens | `src/pages/` (`public`, `owner`, `creator`, `diner`, `admin`) |
 
-## Putting it online (free)
-Run `npm run build` and upload the `dist` folder to Netlify, Vercel or GitHub Pages. Each visitor gets their own copy of the sample data in their browser.
+After changing the sample data, bump `DEMO_VERSION` in `src/demo/data.ts` so browsers load the new data.
 
-## Moving to a shared online database later
-The SQL file is written for Supabase. If you later want everyone to share one database:
-1. Run the SQL file in a Supabase project.
-2. Install `@supabase/supabase-js`.
-3. In `src/lib/supabase.ts`, replace the export with `createClient(url, anonKey)`.
-
-The screens don't need to change.
+Outlet addresses, menus, follower counts and phone numbers are placeholders. Translations for Malay and Tamil should be checked by a native speaker.

@@ -6,9 +6,9 @@ export const LOGO_URL = `${import.meta.env.BASE_URL}logo.png`
 
 export function Logo({ small = false }: { small?: boolean }) {
   return (
-    <span className="inline-flex items-center gap-2">
-      <img src={LOGO_URL} alt="" className={small ? 'h-9 w-9' : 'h-11 w-11'} />
-      <span className={`font-heading font-extrabold tracking-tight text-brown ${small ? 'text-lg' : 'text-2xl'}`}>
+    <span className="inline-flex shrink-0 items-center gap-1.5">
+      <img src={LOGO_URL} alt="" className={small ? 'h-8 w-8' : 'h-11 w-11'} />
+      <span className={`whitespace-nowrap font-heading font-extrabold tracking-tight text-brown ${small ? 'hidden text-base min-[430px]:inline' : 'text-2xl'}`}>
         Makan Kaki
       </span>
     </span>
@@ -76,12 +76,61 @@ const statusStyle: Record<string, string> = {
   completed: 'bg-ok-soft text-ok',
   missed: 'bg-bad-soft text-bad',
   cancelled: 'bg-brown-line text-brown-soft',
+  refunded: 'bg-brown-line text-brown-soft',
   open: 'bg-ok-soft text-ok',
   pending: 'bg-orange-soft text-brown',
   approved: 'bg-ok-soft text-ok',
   rejected: 'bg-bad-soft text-bad',
+  paused: 'bg-bad-soft text-bad',
+  new: 'bg-bad text-white',
+  preparing: 'bg-orange-soft text-brown',
+  ready: 'bg-ok text-white',
+  requested: 'bg-orange-soft text-brown',
+  offered: 'bg-orange-soft text-brown',
+  accepted: 'bg-ok-soft text-ok',
+  checked_in: 'bg-ok-soft text-ok',
+  posted: 'bg-ok-soft text-ok',
+  verified: 'bg-ok text-white',
+  no_show: 'bg-bad-soft text-bad',
+  paid: 'bg-ok-soft text-ok',
+  scheduled: 'bg-orange-soft text-brown',
+  resolved: 'bg-ok-soft text-ok',
 }
 
-export function StatusChip({ status }: { status: string }) {
-  return <span className={`chip capitalize ${statusStyle[status] ?? 'bg-brown-line text-brown'}`}>{status}</span>
+const statusLabel: Record<string, string> = {
+  checked_in: 'checked in', no_show: 'no-show', requested: 'finding creator', offered: 'offered to creators',
+  verified: 'post verified', new: 'new',
+}
+
+export function StatusChip({ status, label }: { status: string; label?: string }) {
+  return <span className={`chip capitalize ${statusStyle[status] ?? 'bg-brown-line text-brown'}`}>{label ?? statusLabel[status] ?? status}</span>
+}
+
+export function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={() => onChange(!on)}
+      className={`relative h-8 w-14 shrink-0 rounded-full transition ${on ? 'bg-ok' : 'bg-brown-line'}`}>
+      <span className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition ${on ? 'left-7' : 'left-1'}`} />
+    </button>
+  )
+}
+
+/** Small "this is simulated" marker so viewers know which parts are mock-ups. */
+export function DemoNote({ children }: { children: ReactNode }) {
+  return <p className="rounded-xl border border-dashed border-orange/50 bg-orange-soft/50 px-3 py-2 text-xs text-brown-soft"><span className="font-semibold text-brown">Demo:</span> {children}</p>
+}
+
+export function Avatar({ name, size = 40 }: { name: string; size?: number }) {
+  const colors = ['#D96B27', '#4A7C59', '#3B2314', '#B85618', '#6B5446']
+  const c = colors[[...name].reduce((s, ch) => s + ch.charCodeAt(0), 0) % colors.length]
+  return (
+    <span className="inline-flex shrink-0 items-center justify-center rounded-full font-heading font-bold text-white"
+      style={{ width: size, height: size, background: c, fontSize: size * 0.42 }}>
+      {name.replace(/^@/, '').charAt(0).toUpperCase()}
+    </span>
+  )
+}
+
+export function Stars({ value }: { value: number }) {
+  return <span aria-label={`${value} out of 5`} className="text-orange">{'★'.repeat(Math.round(value))}<span className="text-brown-line">{'★'.repeat(5 - Math.round(value))}</span></span>
 }

@@ -1,387 +1,220 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase, errorText } from '../lib/supabase'
-import { fmtDate, fmtMonth, fmtTime, PLANS, sgd, sgMonth, type Plan } from '../lib/format'
-import { Alert, Empty, Field, PageTitle, Spinner, Stat, StatusChip } from '../components/ui'
-
-type AdminCreator = {
-  id: string; name: string; email: string; phone: string; social_handle: string; platform: string
-  follower_count: number; hdb_town: string; languages: string[]; approval_status: string; created_at: string
-}
-type AdminOutlet = {
-  id: string; name: string; address: string; hdb_town: string; cuisine: string; plan: Plan
-  owner_name: string; owner_email: string; owner_phone: string
-  open_slots: number; bookings_month: number; redemptions_month: number; spend_month: string
-}
-type AdminBooking = {
-  booking_id: string; code: string; status: string; booked_at: string; post_link: string | null
-  slot_date: string; start_time: string; outlet_name: string; hdb_town: string
-  creator_name: string; social_handle: string; platform: string; redemptions: number; spend: string
-}
-type BillingRow = {
-  outlet_name: string; plan: Plan; plan_fee: string; redemptions: number
-  diner_spend: string; commission: string; total_owed: string; creator_payouts: string
-}
-type PayoutRow = { creator_name: string; social_handle: string; email: string; phone: string; redemptions: number; diner_spend: string; payout: string }
-
-function useRpc<T>(fn: string) {
-  const [rows, setRows] = useState<T[] | null>(null)
-  const [error, setError] = useState('')
-  const load = useCallback(async () => {
-    const { data, error } = await supabase.rpc(fn)
-    if (error) setError(errorText(error))
-    setRows((data as T[]) ?? [])
-  }, [fn])
-  useEffect(() => { load() }, [load])
-  return { rows, error, load }
-}
+import { useDemo, outletStats, creatorStats, ownerNetOf, commissionOf, sgd, r2 } from '../demo/store'
+import { PLANS, addDays, sgToday, type Creator, type Visit } from '../demo/data'
+import { fmtDate, fmtTime } from '../lib/format'
+import { Alert, Avatar, DemoNote, Empty, PageTitle, Stat, StatusChip } from '../components/ui'
+import { downloadCsv, timeAgo } from './owner'
 
 export function AdminHome() {
-  const creators = useRpc<AdminCreator>('admin_creators')
-  const outlets = useRpc<AdminOutlet>('admin_outlets')
-  const bookings = useRpc<AdminBooking>('admin_bookings')
-  if (!creators.rows || !outlets.rows || !bookings.rows) return <Spinner />
-
-  const pending = creators.rows.filter((c) => c.approval_status === 'pending').length
-  const missed = bookings.rows.filter((b) => b.status === 'missed')
-  const month = sgMonth()
-  const redemptions = outlets.rows.reduce((s, o) => s + Number(o.redemptions_month), 0)
-
+  const { state } = useDemo()
+  const pending = state.creators.filter((c) => c.status === 'pending').length
+  const toMatch = state.visits.filter((v) => v.status === 'requested').length
+  const disputes = state.disputes.filter((d) => d.status === 'open').length
+  const coded = state.orders.filter((o) => o.code && !['cancelled', 'refunded'].includes(o.status))
+  const gmv = r2(coded.reduce((s, o) => s + o.total, 0))
+  const commission = r2(coded.reduce((s, o) => s + commissionOf(o), 0))
+  const subs = state.outlets.reduce((s, o) => s + PLANS[o.plan].fee, 0)
   return (
     <>
-      <PageTitle title="Admin" subtitle={fmtMonth(month)} />
-      {pending > 0 && (
-        <Link to="/admin/creators" className="mb-4 block"><Alert kind="info">{pending} creator{pending > 1 ? 's' : ''} waiting for approval →</Alert></Link>
-      )}
-      <div className="grid grid-cols-2 gap-3">
-        <Stat label="Outlets" value={outlets.rows.length} />
-        <Stat label="Approved creators" value={creators.rows.filter((c) => c.approval_status === 'approved').length} />
-        <Stat label="Live bookings" value={bookings.rows.filter((b) => b.status === 'booked').length} />
-        <Stat label="Diners this month" value={redemptions} />
+      <PageTitle title="Makan Kaki admin" subtitle="Whampoa pilot" />
+      <div className="space-y-2">
+        {pending > 0 && <Link to="/admin/creators" className="block"><Alert kind="info">👤 {pending} creator{pending > 1 ? 's' : ''} waiting for approval →</Alert></Link>}
+        {toMatch > 0 && <Link to="/admin/matching" className="block"><Alert kind="info">🔗 {toMatch} visit request{toMatch > 1 ? 's' : ''} to match →</Alert></Link>}
+        {disputes > 0 && <Link to="/admin/disputes" className="block"><Alert kind="bad">⚑ {disputes} open dispute{disputes > 1 ? 's' : ''} →</Alert></Link>}
       </div>
-
-      <h2 className="mt-8 mb-1 text-lg font-bold">Missed posts</h2>
-      <p className="mb-3 text-sm text-brown-soft">No post link 7 days after the visit.</p>
-      {missed.length === 0 ? <Empty>No missed posts.</Empty> : (
-        <div className="space-y-3">
-          {missed.map((b) => (
-            <div key={b.booking_id} className="card border-l-4 border-bad">
-              <div className="font-bold">{b.creator_name} <span className="font-normal text-brown-soft">{b.social_handle}</span></div>
-              <div className="text-sm text-brown-soft">{b.outlet_name} · visited {fmtDate(b.slot_date)} · <span className="font-mono">{b.code}</span></div>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <Stat label="Outlets" value={state.outlets.length} note="Pilot target 15" />
+        <Stat label="Approved creators" value={state.creators.filter((c) => c.status === 'approved').length} note="Pilot target 20" />
+        <Stat label="Coded order sales" value={sgd(gmv)} note={`${coded.length} orders`} />
+        <Stat label="Revenue" value={sgd(subs + commission)} note={`${sgd(subs)} plans + ${sgd(commission)} commission`} />
+      </div>
+      <h2 className="mt-8 mb-3 text-lg font-bold">Outlets</h2>
+      <div className="space-y-2">{state.outlets.map((o) => {
+        const st = outletStats(state, o)
+        return (
+          <div key={o.id} className="card flex items-center justify-between gap-3 py-3">
+            <div className="min-w-0"><div className="font-bold">{o.name}</div><div className="text-xs text-brown-soft">{o.area} · {PLANS[o.plan].label}{o.launchPack ? ' · launch pack' : ''}{o.paused ? ' · paused' : ''}</div></div>
+            <div className="text-right text-sm"><div className="font-bold">{st.coded.length} coded</div><div className="text-xs text-brown-soft">{sgd(st.sales)}</div></div>
+          </div>
+        )
+      })}</div>
     </>
   )
 }
+
+function followerOk(c: Creator) { return c.followers >= 1000 && c.followers <= 10000 }
 
 export function AdminCreators() {
-  const { rows, error, load } = useRpc<AdminCreator>('admin_creators')
-  const [filter, setFilter] = useState<'pending' | 'all'>('pending')
-  const [busyId, setBusyId] = useState('')
-
-  async function setStatus(id: string, status: string) {
-    setBusyId(id)
-    await supabase.rpc('admin_set_creator_status', { p_id: id, p_status: status })
-    await load()
-    setBusyId('')
+  const { state, update, whatsapp } = useDemo()
+  const [tab, setTab] = useState<'pending' | 'all'>('pending')
+  const shown = state.creators.filter((c) => tab === 'all' || c.status === 'pending')
+  const set = (c: Creator, status: Creator['status']) => {
+    update((s) => { s.creators.find((x) => x.id === c.id)!.status = status })
+    whatsapp(c.name, status === 'approved' ? 'You are approved on Makan Kaki! 🎉 Visit offers will appear in the app.' : 'Thanks for applying to Makan Kaki. We can’t approve your account right now.')
   }
-
-  if (!rows) return <Spinner />
-  const shown = filter === 'pending' ? rows.filter((r) => r.approval_status === 'pending') : rows
   return (
     <>
-      <PageTitle title="Creators" />
-      {error && <Alert kind="bad">{error}</Alert>}
-      <Tabs value={filter} onChange={setFilter} options={[['pending', 'Awaiting approval'], ['all', 'All creators']]} />
-      {shown.length === 0 ? <Empty>{filter === 'pending' ? 'No creators waiting for approval.' : 'No creators yet.'}</Empty> : (
-        <div className="space-y-3">
-          {shown.map((c) => (
-            <div key={c.id} className="card">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-heading text-lg font-bold">{c.name}</div>
-                  <div className="text-sm">{c.social_handle} · {c.platform} · {c.follower_count.toLocaleString('en-SG')} followers</div>
-                </div>
-                <StatusChip status={c.approval_status} />
-              </div>
-              <div className="mt-2 grid gap-0.5 text-sm text-brown-soft">
-                <span>{c.hdb_town} · {c.languages.join(', ')}</span>
-                <span className="break-all">{c.email} · {c.phone}</span>
-              </div>
+      <PageTitle title="Creator approvals" subtitle="Check real followers, food content and engagement." />
+      <div className="mb-4 grid grid-cols-2 gap-2">{(['pending', 'all'] as const).map((k) => (
+        <button key={k} onClick={() => setTab(k)} className={`min-h-[44px] rounded-full border-2 text-sm font-semibold ${tab === k ? 'border-orange bg-orange-soft' : 'border-brown-line bg-white'}`}>{k === 'pending' ? 'Waiting' : 'All creators'}</button>
+      ))}</div>
+      {shown.length === 0 ? <Empty>No creators waiting.</Empty> : (
+        <div className="space-y-3">{shown.map((c) => (
+          <div key={c.id} className="card">
+            <div className="flex items-center gap-3">
+              <Avatar name={c.handle} size={48} />
+              <div className="min-w-0 flex-1"><div className="font-bold">{c.handle} <span className="font-normal text-brown-soft">· {c.name}</span></div><div className="text-xs text-brown-soft">{c.platform} · {c.area}</div></div>
+              <StatusChip status={c.status} />
+            </div>
+            <ul className="mt-3 space-y-1 text-sm">
+              <li>{followerOk(c) ? '✅' : '❌'} {c.followers.toLocaleString('en-SG')} followers (1,000–10,000)</li>
+              <li>{c.engagement >= 3 ? '✅' : '⚠️'} {c.engagement}% engagement</li>
+              <li>✅ Food content in {c.samplePosts.length} sample post{c.samplePosts.length === 1 ? '' : 's'}</li>
+              <li>{c.paynow ? '✅' : '⚠️'} PayNow {c.paynow ? 'added' : 'missing'}</li>
+              <li className="text-brown-soft">{c.languages.join(', ')} · {c.cuisines.join(', ')}</li>
+            </ul>
+            {c.status === 'pending' && (
               <div className="mt-3 grid grid-cols-2 gap-2">
-                {c.approval_status !== 'approved' && (
-                  <button className="btn-ok min-h-[48px] text-base" disabled={busyId === c.id} onClick={() => setStatus(c.id, 'approved')}>Approve</button>
-                )}
-                {c.approval_status !== 'rejected' && (
-                  <button className="btn-secondary min-h-[48px] text-base" disabled={busyId === c.id} onClick={() => setStatus(c.id, 'rejected')}>Reject</button>
-                )}
+                <button className="btn-ok min-h-[48px] text-base" onClick={() => set(c, 'approved')}>Approve</button>
+                <button className="btn-secondary min-h-[48px] text-base" onClick={() => set(c, 'rejected')}>Reject</button>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </>
-  )
-}
-
-export function AdminOutlets() {
-  const { rows, error } = useRpc<AdminOutlet>('admin_outlets')
-  if (!rows) return <Spinner />
-  return (
-    <>
-      <PageTitle title="All outlets" subtitle={`${rows.length} outlets · figures for ${fmtMonth(sgMonth())}`} />
-      {error && <Alert kind="bad">{error}</Alert>}
-      {rows.length === 0 ? <Empty>No outlets yet.</Empty> : (
-        <div className="space-y-3">
-          {rows.map((o) => (
-            <div key={o.id} className="card">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-heading text-lg font-bold">{o.name}</div>
-                  <div className="text-sm text-brown-soft">{o.cuisine} · {o.hdb_town}</div>
-                </div>
-                <span className="chip bg-orange-soft text-brown">{PLANS[o.plan].label}</span>
-              </div>
-              <div className="mt-1 text-sm text-brown-soft">{o.address}</div>
-              <div className="mt-1 break-all text-sm text-brown-soft">{o.owner_name} · {o.owner_email} · {o.owner_phone}</div>
-              <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                <Mini label="Open slots" v={o.open_slots} />
-                <Mini label="Visits" v={`${o.bookings_month}/${PLANS[o.plan].visits}`} />
-                <Mini label={`Diners · ${sgd(Number(o.spend_month))}`} v={o.redemptions_month} />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </>
-  )
-}
-
-function Mini({ label, v }: { label: string; v: React.ReactNode }) {
-  return (
-    <div className="rounded-xl bg-cream py-2">
-      <div className="font-heading text-lg font-bold">{v}</div>
-      <div className="text-xs text-brown-soft">{label}</div>
-    </div>
-  )
-}
-
-function Tabs<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: [T, string][] }) {
-  return (
-    <div className="mb-4 flex gap-2 overflow-x-auto">
-      {options.map(([v, l]) => (
-        <button key={v} onClick={() => onChange(v)}
-          className={`min-h-[44px] shrink-0 rounded-full border-2 px-4 text-sm font-semibold ${value === v ? 'border-orange bg-orange-soft' : 'border-brown-line bg-white'}`}>
-          {l}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-export function AdminBookings() {
-  const { rows, error, load } = useRpc<AdminBooking>('admin_bookings')
-  const [filter, setFilter] = useState<'all' | 'booked' | 'completed' | 'missed' | 'cancelled'>('all')
-  const [editing, setEditing] = useState<AdminBooking | null>(null)
-
-  if (!rows) return <Spinner />
-  const shown = filter === 'all' ? rows : rows.filter((r) => r.status === filter)
-  return (
-    <>
-      <PageTitle title="All bookings" />
-      {error && <Alert kind="bad">{error}</Alert>}
-      <Tabs value={filter} onChange={setFilter} options={[['all', 'All'], ['booked', 'Booked'], ['completed', 'Completed'], ['missed', 'Missed'], ['cancelled', 'Cancelled']]} />
-      {shown.length === 0 ? <Empty>No bookings.</Empty> : (
-        <div className="space-y-3">
-          {shown.map((b) => (
-            <div key={b.booking_id} className="card">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-bold">{b.outlet_name}</div>
-                  <div className="text-sm text-brown-soft">{b.creator_name} {b.social_handle}</div>
-                  <div className="text-sm text-brown-soft">{fmtDate(b.slot_date)} · {fmtTime(b.start_time)}</div>
-                </div>
-                <StatusChip status={b.status} />
-              </div>
-              <div className="mt-2 flex items-center justify-between rounded-xl bg-cream px-3 py-2 text-sm">
-                <span className="font-mono font-bold">{b.code}</span>
-                <span>{b.redemptions} diners · {sgd(Number(b.spend))}</span>
-              </div>
-              {b.post_link && <a href={b.post_link} target="_blank" rel="noreferrer" className="link mt-2 inline-block break-all text-sm">{b.post_link}</a>}
-              {b.status !== 'cancelled' && (
-                <button onClick={() => setEditing(b)} className="btn-secondary mt-3 min-h-[44px] w-full text-base">Edit or cancel</button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-      {editing && <EditBooking b={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
-    </>
-  )
-}
-
-function EditBooking({ b, onClose, onSaved }: { b: AdminBooking; onClose: () => void; onSaved: () => void }) {
-  const [link, setLink] = useState(b.post_link ?? '')
-  const [status, setStatus] = useState(b.status)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [confirmCancel, setConfirmCancel] = useState(false)
-
-  async function save() {
-    setBusy(true); setError('')
-    const { error } = await supabase.rpc('admin_update_booking', { p_id: b.booking_id, p_post_link: link, p_status: status })
-    setBusy(false)
-    if (error) setError(errorText(error)); else onSaved()
-  }
-  async function cancel() {
-    setBusy(true); setError('')
-    const { error } = await supabase.rpc('admin_cancel_booking', { p_id: b.booking_id })
-    setBusy(false)
-    if (error) setError(errorText(error)); else onSaved()
-  }
-
-  return (
-    <div className="fixed inset-0 z-20 flex items-end justify-center bg-brown/40 sm:items-center" onClick={onClose}>
-      <div className="w-full max-w-xl rounded-t-3xl bg-cream p-5 sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-xl font-bold">Edit booking</h2>
-        <p className="text-sm text-brown-soft">{b.outlet_name} · {b.creator_name} · <span className="font-mono">{b.code}</span></p>
-        <div className="mt-4 space-y-4">
-          <Field label="Post link"><input className="input" type="url" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://…" /></Field>
-          <Field label="Status">
-            <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="booked">Booked</option>
-              <option value="completed">Completed</option>
-              <option value="missed">Missed</option>
-            </select>
-          </Field>
-          {error && <Alert kind="bad">{error}</Alert>}
-          <button className="btn-primary w-full" disabled={busy} onClick={save}>Save changes</button>
-          {!confirmCancel ? (
-            <button className="btn-secondary w-full" disabled={busy} onClick={() => setConfirmCancel(true)}>Cancel booking</button>
-          ) : (
-            <div className="rounded-2xl border-2 border-bad/30 bg-bad-soft p-4">
-              <p className="text-sm font-semibold text-bad">The code {b.code} will stop working. If the visit date hasn't passed, the slot reopens for other creators.</p>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <button className="btn-danger min-h-[48px] text-base" disabled={busy} onClick={cancel}>Yes, cancel it</button>
-                <button className="btn-secondary min-h-[48px] text-base" onClick={() => setConfirmCancel(false)}>Keep it</button>
-              </div>
-            </div>
-          )}
-          <button className="w-full py-2 text-sm font-semibold text-brown-soft underline" onClick={onClose}>Close</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function csvCell(v: string | number) {
-  const s = String(v)
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
-
-function downloadCsv(filename: string, head: string[], rows: (string | number)[][]) {
-  const lines = rows.map((r) => r.map(csvCell).join(','))
-  const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(a.href)
-}
-
-const money = (v: string | number) => Number(v).toFixed(2)
-
-export function AdminBilling() {
-  const [month, setMonth] = useState(sgMonth())
-  const [rows, setRows] = useState<BillingRow[] | null>(null)
-  const [payouts, setPayouts] = useState<PayoutRow[] | null>(null)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    setRows(null); setPayouts(null)
-    const p_month = `${month}-01`
-    supabase.rpc('admin_billing', { p_month }).then(({ data, error }) => {
-      if (error) setError(errorText(error))
-      setRows((data as BillingRow[]) ?? [])
-    })
-    supabase.rpc('admin_creator_payouts', { p_month }).then(({ data, error }) => {
-      if (error) setError(errorText(error))
-      setPayouts((data as PayoutRow[]) ?? [])
-    })
-  }, [month])
-
-  function downloadBilling() {
-    if (!rows) return
-    downloadCsv(`makan-kaki-billing-${month}.csv`,
-      ['outlet name', 'plan', 'plan fee (SGD)', 'number of redemptions', 'diner spend (SGD)', 'commission 10% (SGD)', 'total amount owed (SGD)', 'creator payouts 2% (SGD)'],
-      rows.map((r) => [r.outlet_name, PLANS[r.plan].label, money(r.plan_fee), r.redemptions, money(r.diner_spend), money(r.commission), money(r.total_owed), money(r.creator_payouts)]))
-  }
-  function downloadPayouts() {
-    if (!payouts) return
-    downloadCsv(`makan-kaki-creator-payouts-${month}.csv`,
-      ['creator name', 'social handle', 'email', 'phone', 'number of redemptions', 'diner spend (SGD)', 'payout 2% (SGD)'],
-      payouts.map((p) => [p.creator_name, p.social_handle, p.email, p.phone, p.redemptions, money(p.diner_spend), money(p.payout)]))
-  }
-
-  const sum = (k: keyof BillingRow) => rows?.reduce((s, r) => s + Number(r[k]), 0) ?? 0
-  const owed = sum('total_owed')
-  const toCreators = payouts?.reduce((s, p) => s + Number(p.payout), 0) ?? 0
-  return (
-    <>
-      <PageTitle title="Monthly billing" subtitle="Outlets pay their plan + 10% of diners' bills. Creators get a fifth of that commission (2% of bills). Settle by PayNow." />
-      <div className="card space-y-4">
-        <Field label="Month"><input className="input" type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} /></Field>
-        <div className="grid grid-cols-2 gap-2">
-          <button className="btn-primary min-h-[52px] px-3 text-base" disabled={!rows || rows.length === 0} onClick={downloadBilling}>Outlet billing CSV</button>
-          <button className="btn-secondary min-h-[52px] px-3 text-base" disabled={!payouts || payouts.length === 0} onClick={downloadPayouts}>Creator payouts CSV</button>
-        </div>
-      </div>
-      {error && <div className="mt-4"><Alert kind="bad">{error}</Alert></div>}
-      {!rows || !payouts ? <Spinner /> : (
-        <>
-          <div className="mt-5 grid grid-cols-3 gap-2 text-center">
-            <Mini label="Outlets owe" v={sgd(owed)} />
-            <Mini label="To creators" v={sgd(toCreators)} />
-            <Mini label="We keep" v={sgd(owed - toCreators)} />
+            )}
+            {c.status === 'paused' && <button className="btn-secondary mt-3 w-full min-h-[48px] text-base" onClick={() => update((s) => { const x = s.creators.find((q) => q.id === c.id)!; x.status = 'approved'; x.strikes = 0 })}>Unpause and clear strikes</button>}
           </div>
-
-          <h2 className="mt-6 mb-3 text-lg font-bold">Outlets · {fmtMonth(month)}</h2>
-          {rows.length === 0 ? <Empty>No outlets for {fmtMonth(month)}.</Empty> : (
-            <div className="space-y-3">
-              {rows.map((r) => (
-                <div key={r.outlet_name} className="card">
-                  <div className="flex justify-between gap-3">
-                    <div className="font-bold">{r.outlet_name}</div>
-                    <div className="font-heading font-bold">{sgd(Number(r.total_owed))}</div>
-                  </div>
-                  <div className="mt-1 text-sm text-brown-soft">
-                    {PLANS[r.plan].label} plan {sgd(Number(r.plan_fee))} + 10% of {sgd(Number(r.diner_spend))} from {r.redemptions} diners = {sgd(Number(r.commission))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <h2 className="mt-8 mb-3 text-lg font-bold">Creator payouts · {fmtMonth(month)}</h2>
-          {payouts.length === 0 ? <Empty>No redemptions this month, so no payouts.</Empty> : (
-            <div className="space-y-3">
-              {payouts.map((p) => (
-                <div key={p.email} className="card">
-                  <div className="flex justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-bold">{p.creator_name} <span className="font-normal text-brown-soft">{p.social_handle}</span></div>
-                      <div className="text-sm text-brown-soft">{p.redemptions} diners spent {sgd(Number(p.diner_spend))}</div>
-                    </div>
-                    <div className="font-heading font-bold text-ok">{sgd(Number(p.payout))}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
+        ))}</div>
       )}
+    </>
+  )
+}
+
+/** Simple score: shared languages and cuisines, plus rating, minus strikes. */
+function score(v: Visit, c: Creator, cuisine: string) {
+  const lang = v.languagesWanted.filter((l) => c.languages.includes(l)).length
+  const cui = c.cuisines.some((x) => cuisine.toLowerCase().includes(x.toLowerCase()) || x === 'Hawker' || x === 'Café') ? 1 : 0
+  return lang * 2 + cui + c.rating / 5 - c.strikes
+}
+
+export function AdminMatching() {
+  const { state, update, whatsapp } = useDemo()
+  const requests = state.visits.filter((v) => v.status === 'requested')
+  const offered = state.visits.filter((v) => v.status === 'offered')
+  const approved = state.creators.filter((c) => c.status === 'approved')
+  function offer(v: Visit, c: Creator | null) {
+    const o = state.outlets.find((x) => x.id === v.outletId)!
+    update((s) => { const x = s.visits.find((q) => q.id === v.id)!; x.status = 'offered'; x.creatorId = c?.id ?? null })
+    if (c) whatsapp(c.name, `New visit offer: ${o.name} (${o.area}), ${fmtDate(v.date)} at ${fmtTime(v.time)}. Pay S$30 + 20% of commission. Open the app to accept.`)
+    else whatsapp('all matching creators', `New visit offer at ${o.name}, ${fmtDate(v.date)}. First to accept gets it.`)
+  }
+  return (
+    <>
+      <PageTitle title="Match visits" subtitle="Suggested creators are ranked by language and cuisine." />
+      {requests.length === 0 ? <Empty>No visit requests waiting. Book one as an owner to see matching.</Empty> : (
+        <div className="space-y-4">{requests.map((v) => {
+          const o = state.outlets.find((x) => x.id === v.outletId)!
+          const ranked = [...approved].sort((a, b) => score(v, b, o.cuisine) - score(v, a, o.cuisine)).slice(0, 3)
+          return (
+            <div key={v.id} className="card">
+              <div className="font-heading text-lg font-bold">{o.name}</div>
+              <div className="text-sm text-brown-soft">{fmtDate(v.date)} · {fmtTime(v.time)} · wants {v.languagesWanted.join(', ')}</div>
+              <div className="mt-3 space-y-2">{ranked.map((c, i) => (
+                <div key={c.id} className="flex items-center gap-3 rounded-xl bg-cream p-2">
+                  <Avatar name={c.handle} size={36} />
+                  <div className="min-w-0 flex-1"><div className="text-sm font-bold">{c.handle}{i === 0 && <span className="ml-1 chip bg-ok-soft text-ok">Best match</span>}</div><div className="text-xs text-brown-soft">{c.languages.join(', ')} · ★ {c.rating.toFixed(1)}</div></div>
+                  <button className="btn-primary min-h-[40px] px-3 text-sm" onClick={() => offer(v, c)}>Offer</button>
+                </div>
+              ))}</div>
+              <button className="mt-2 w-full py-1 text-sm font-semibold text-brown-soft underline" onClick={() => offer(v, null)}>Offer to all approved creators</button>
+            </div>
+          )
+        })}</div>
+      )}
+      <h2 className="mt-8 mb-3 text-lg font-bold">Waiting for a creator to accept</h2>
+      {offered.length === 0 ? <Empty>None.</Empty> : (
+        <div className="space-y-2">{offered.map((v) => {
+          const o = state.outlets.find((x) => x.id === v.outletId)!; const c = v.creatorId ? state.creators.find((x) => x.id === v.creatorId) : null
+          return <div key={v.id} className="card flex justify-between py-3 text-sm"><span className="font-semibold">{o.name} · {fmtDate(v.date)}</span><span className="text-brown-soft">{c ? c.handle : 'open to all'}</span></div>
+        })}</div>
+      )}
+    </>
+  )
+}
+
+export function AdminPayouts() {
+  const { state, update, whatsapp } = useDemo()
+  const today = sgToday()
+  const ownerDue = state.outlets.map((o) => {
+    const orders = state.orders.filter((x) => x.outletId === o.id && x.status === 'completed' && x.createdAt.slice(0, 10) >= addDays(today, -1))
+    return { o, orders, amount: r2(orders.reduce((s, x) => s + ownerNetOf(x), 0)) }
+  }).filter((r) => r.amount > 0)
+  const creatorDue = state.creators.filter((c) => c.status !== 'pending').map((c) => ({ c, st: creatorStats(state, c) })).filter((r) => r.st.total > 0)
+  const [sent, setSent] = useState<string[]>([])
+
+  function payOwners() {
+    update((s) => { ownerDue.forEach((r) => s.payouts.unshift({ id: `p${Date.now()}${r.o.id}`, to: 'owner', targetId: r.o.id, amount: r.amount, date: addDays(today, 1), note: 'Coded orders minus 10%', status: 'scheduled' })) })
+    ownerDue.forEach((r) => whatsapp(r.o.name, `PayNow payout of ${sgd(r.amount)} for ${r.orders.length} orders is scheduled for ${fmtDate(addDays(today, 1))}.`))
+    setSent((p) => [...p, 'owners'])
+  }
+  function payCreators() {
+    update((s) => { creatorDue.forEach((r) => s.payouts.unshift({ id: `p${Date.now()}${r.c.id}`, to: 'creator', targetId: r.c.id, amount: r.st.total, date: today, note: `${r.st.visitsDone.length} visit(s) + commission share`, status: 'paid' })) })
+    creatorDue.forEach((r) => whatsapp(r.c.name, `Your Makan Kaki payout of ${sgd(r.st.total)} has been sent to PayNow ${r.c.paynow}.`))
+    setSent((p) => [...p, 'creators'])
+  }
+
+  return (
+    <>
+      <PageTitle title="Payouts" subtitle="Owners: coded order value minus 10%, next working day. Creators: S$30 per visit + 20% of commission, monthly." />
+      <h2 className="mb-3 text-lg font-bold">Owners · due {fmtDate(addDays(today, 1))}</h2>
+      {ownerDue.length === 0 ? <Empty>Nothing due.</Empty> : (
+        <div className="card divide-y divide-brown-line p-0">{ownerDue.map((r) => (
+          <div key={r.o.id} className="flex justify-between px-4 py-3 text-sm"><span><b>{r.o.name}</b> · {r.orders.length} order{r.orders.length === 1 ? "" : "s"} · PayNow {r.o.paynow}</span><span className="font-heading font-bold">{sgd(r.amount)}</span></div>
+        ))}</div>
+      )}
+      <button className="btn-primary mt-3 w-full" disabled={!ownerDue.length || sent.includes('owners')} onClick={payOwners}>{sent.includes('owners') ? 'Owner payouts scheduled ✓' : 'Send owner payouts by PayNow'}</button>
+
+      <h2 className="mt-8 mb-3 text-lg font-bold">Creators · this month</h2>
+      {creatorDue.length === 0 ? <Empty>Nothing due.</Empty> : (
+        <div className="card divide-y divide-brown-line p-0">{creatorDue.map((r) => (
+          <div key={r.c.id} className="flex justify-between px-4 py-3 text-sm">
+            <span><b>{r.c.handle}</b><br /><span className="text-xs text-brown-soft">{r.st.visitsDone.length} × S$30 + 20% of {sgd(r.st.commission)}</span></span>
+            <span className="font-heading font-bold">{sgd(r.st.total)}</span>
+          </div>
+        ))}</div>
+      )}
+      <button className="btn-primary mt-3 w-full" disabled={!creatorDue.length || sent.includes('creators')} onClick={payCreators}>{sent.includes('creators') ? 'Creator payouts sent ✓' : 'Send creator payouts by PayNow'}</button>
+      <button className="btn-secondary mt-3 w-full" onClick={() => downloadCsv('makan-kaki-payouts.csv', ['to', 'name', 'amount (SGD)', 'date', 'note', 'status'],
+        state.payouts.map((p) => [p.to, p.to === 'owner' ? state.outlets.find((o) => o.id === p.targetId)?.name ?? '' : state.creators.find((c) => c.id === p.targetId)?.handle ?? '', p.amount.toFixed(2), p.date, p.note, p.status]))}>Download payout history CSV</button>
+      <div className="mt-3"><DemoNote>PayNow transfers are simulated.</DemoNote></div>
+    </>
+  )
+}
+
+export function AdminDisputes() {
+  const { state, update, whatsapp } = useDemo()
+  return (
+    <>
+      <PageTitle title="Disputes" subtitle="Refund problems, late posts and no-shows." />
+      <div className="space-y-3">{state.disputes.map((d) => (
+        <div key={d.id} className="card">
+          <div className="flex items-start justify-between gap-3"><div className="font-bold">{d.title}</div><StatusChip status={d.status} /></div>
+          <p className="mt-1 text-sm">{d.detail}</p>
+          <div className="mt-1 text-xs text-brown-soft">{d.party} · {timeAgo(d.at)}</div>
+          {d.status === 'open' && (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button className="btn-secondary min-h-[44px] text-sm" onClick={() => whatsapp(d.party, `Hi from Makan Kaki about "${d.title}". Could you reply here with an update?`)}>WhatsApp them</button>
+              <button className="btn-ok min-h-[44px] text-sm" onClick={() => update((s) => { s.disputes.find((x) => x.id === d.id)!.status = 'resolved' })}>Mark resolved</button>
+            </div>
+          )}
+        </div>
+      ))}</div>
+      <h2 className="mt-8 mb-3 text-lg font-bold">Platform rules</h2>
+      <ul className="card list-disc space-y-1 pl-8 text-sm">
+        <li>Free cancellation up to 24 hours before a visit. Later: the visit counts for the owner, or the creator gets a strike.</li>
+        <li>A no-show returns the visit to the owner and gives a strike. Three strikes pauses the account.</li>
+        <li>Post within 48 hours with the code and a paid-post label such as #ad.</li>
+        <li>Orders count for a creator when the diner enters their code or arrives through their link within 7 days.</li>
+        <li>Refunded orders earn no commission for Makan Kaki or the creator.</li>
+      </ul>
     </>
   )
 }

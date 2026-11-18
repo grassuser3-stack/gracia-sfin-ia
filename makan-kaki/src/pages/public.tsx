@@ -1,341 +1,382 @@
-import { useState, type FormEvent } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { supabase, errorText } from '../lib/supabase'
-import { HDB_TOWNS, LANGUAGES, PLANS, PLATFORMS, type Plan } from '../lib/format'
-import { Alert, Field, Logo, LOGO_URL } from '../components/ui'
-import { homeFor, type Role } from '../lib/auth'
-import { resetDemoData } from '../lib/local/client'
-import { DEMO_ACCOUNTS, DEMO_PASSWORD } from '../lib/local/setup'
+import { useState, type ReactNode } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { useDemo, type Session } from '../demo/store'
+import { useLang, LANGS } from '../demo/i18n'
+import { PLANS, PILOT_DISCOUNT, type Lang, type PlanId, type Platform } from '../demo/data'
+import { TOUR } from '../demo/tour'
+import { useTour } from '../components/Shell'
+import { Alert, Avatar, DemoNote, Field, LOGO_URL } from '../components/ui'
 
-function TopBar() {
+const LANE = ['Business owner', 'Makan Kaki', 'Creator', 'Diner'] as const
+const laneColor: Record<string, string> = { 'Business owner': 'border-orange bg-orange-soft', 'Makan Kaki': 'border-brown bg-brown-line/60', Creator: 'border-ok bg-ok-soft', Diner: 'border-[#2563EB] bg-[#DBEAFE]' }
+
+export function Landing() {
+  const { go } = useTour()
   return (
-    <div className="flex items-center justify-between py-4">
-      <Link to="/"><Logo small /></Link>
-      <Link to="/login" className="link text-sm">Log in</Link>
+    <>
+      <section className="pt-6">
+        <img src={LOGO_URL} alt="Makan Kaki logo" className="mb-5 h-24 w-24" />
+        <span className="chip bg-orange-soft text-brown">Whampoa pilot · 15 outlets · 20 creators</span>
+        <h1 className="mt-4 text-4xl font-extrabold leading-[1.1]">Every order traced back to the <span className="text-orange">video that brought it.</span></h1>
+        <p className="mt-4 text-lg text-brown-soft">
+          Hawkers and cafés pay for visits from local food creators. Creators post with their own code. Diners order through a QR checkout, no download needed.
+        </p>
+        <div className="mt-6 grid gap-3">
+          <button onClick={() => go(1)} className="btn-primary">▶ Start the 11-step demo tour</button>
+          <Link to="/login" className="btn-secondary">Log in with a demo account</Link>
+          <Link to="/order/xnt" className="btn-secondary">Try the diner checkout</Link>
+        </div>
+        <div className="mt-4"><DemoNote>This is a clickable demo with sample data. Payments, WhatsApp and platform checks are simulated, and nothing leaves your browser.</DemoNote></div>
+      </section>
+
+      <section className="mt-10">
+        <h2 className="text-xl font-bold">Who uses Makan Kaki</h2>
+        <div className="mt-3 grid gap-3">
+          {[
+            ['🧑‍🍳', 'Business owner', 'More diners without making content themselves', 'Owner app'],
+            ['🎥', 'Creator', '1,000–10,000 followers. Paid food content close to home', 'Creator app'],
+            ['🍜', 'Diner', 'A good meal they saw online', 'Web checkout, no account'],
+            ['🤝', 'Makan Kaki team', 'Approves creators, matches visits, handles payouts', 'Admin panel'],
+          ].map(([e, who, want, how]) => (
+            <div key={who} className="card flex gap-3">
+              <div className="text-3xl" aria-hidden>{e}</div>
+              <div><div className="font-bold">{who}</div><div className="text-sm text-brown-soft">{want}</div><div className="mt-1 text-xs font-semibold">{how}</div></div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-10">
+        <h2 className="text-xl font-bold">How one visit works</h2>
+        <p className="mt-1 text-sm text-brown-soft">The creator code entered in step 7 links each order back to its video. Tap a step to see that screen.</p>
+        <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+          {LANE.map((l) => <span key={l} className={`rounded-full border-l-4 px-2 py-0.5 ${laneColor[l]}`}>{l}</span>)}
+        </div>
+        <div className="mt-3 space-y-1.5">
+          {TOUR.map((s) => {
+            const col = LANE.indexOf(s.who)
+            return (
+              <button key={s.n} onClick={() => go(s.n)} style={{ marginLeft: `${col * 13}%`, width: '61%' }}
+                className={`block rounded-xl border-l-4 px-3 py-2 text-left transition active:scale-[0.98] ${laneColor[s.who]} ${s.n === 7 ? 'ring-2 ring-[#2563EB]' : ''}`}>
+                <div className="text-sm font-bold leading-tight">{s.n}. {s.title}</div>
+                <div className="text-xs leading-tight text-brown-soft">{s.detail}</div>
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
+      <section className="mt-10">
+        <h2 className="text-xl font-bold">Plans</h2>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          {(Object.keys(PLANS) as PlanId[]).map((p) => (
+            <div key={p} className="card">
+              <div className="font-heading font-bold">{PLANS[p].label}</div>
+              <div className="mt-1 font-heading text-2xl font-extrabold">S${PLANS[p].fee}<span className="text-sm font-semibold text-brown-soft">/mo</span></div>
+              <div className="mt-1 text-sm text-brown-soft">{PLANS[p].visits} creator visits a month + 10% on coded orders only</div>
+            </div>
+          ))}
+        </div>
+        <p className="mt-2 text-sm text-brown-soft">Pilot outlets get 50% off their first paid month. Creators earn S$30 per visit plus 20% of the commission their code earns.</p>
+      </section>
+    </>
+  )
+}
+
+const DEMO_LOGINS: { label: string; note: string; session: Session; emoji: string }[] = [
+  { label: 'Owner', note: 'Xiao Nong Tian (Hawker)', session: { role: 'owner', id: 'xnt' }, emoji: '🧑‍🍳' },
+  { label: 'Owner', note: 'All Hands Café (Café)', session: { role: 'owner', id: 'ahc' }, emoji: '☕' },
+  { label: 'Creator', note: 'Zelia · @foodieboonie', session: { role: 'creator', id: 'zelia' }, emoji: '🎥' },
+  { label: 'Creator', note: 'Priya · @priyamakan', session: { role: 'creator', id: 'priya' }, emoji: '🎥' },
+  { label: 'Creator', note: 'Chen Wei · waiting for approval', session: { role: 'creator', id: 'wei' }, emoji: '⏳' },
+  { label: 'Admin', note: 'Makan Kaki team', session: { role: 'admin', id: 'admin' }, emoji: '🤝' },
+]
+
+const homeOf = (s: Session) => (s?.role === 'owner' ? '/owner' : s?.role === 'creator' ? '/creator' : s?.role === 'admin' ? '/admin' : '/')
+
+export function Login() {
+  const { setSession, reset } = useDemo()
+  const { t } = useLang()
+  const navigate = useNavigate()
+  return (
+    <>
+      <h1 className="mt-6 text-3xl font-bold">Demo accounts</h1>
+      <p className="mt-1 text-brown-soft">Tap one to log in. Each browser tab can be a different person, so try an owner in one tab and the diner checkout in another.</p>
+      <div className="mt-5 grid gap-2">
+        {DEMO_LOGINS.map((a) => (
+          <button key={a.note} onClick={() => { setSession(a.session); navigate(homeOf(a.session)) }}
+            className="card flex min-h-[60px] items-center gap-3 py-3 text-left transition active:scale-[0.99]">
+            <span className="text-2xl" aria-hidden>{a.emoji}</span>
+            <span className="min-w-0 flex-1"><span className="block font-bold">{a.label}</span><span className="block truncate text-sm text-brown-soft">{a.note}</span></span>
+            <span aria-hidden className="text-xl text-brown-soft">›</span>
+          </button>
+        ))}
+        <Link to="/order/xnt" className="card flex min-h-[60px] items-center gap-3 py-3">
+          <span className="text-2xl" aria-hidden>🍜</span>
+          <span className="flex-1"><span className="block font-bold">Diner</span><span className="block text-sm text-brown-soft">No account. Opens the QR checkout</span></span>
+          <span aria-hidden className="text-xl text-brown-soft">›</span>
+        </Link>
+      </div>
+      <div className="mt-6 grid grid-cols-2 gap-2">
+        <Link to="/signup/owner" className="btn-secondary min-h-[48px] text-base">{t('Sign up')}: owner</Link>
+        <Link to="/signup/creator" className="btn-secondary min-h-[48px] text-base">{t('Sign up')}: creator</Link>
+      </div>
+      <p className="mt-6 text-center text-xs text-brown-soft">
+        Demo data is saved in this browser only.{' '}
+        <button onClick={() => { if (window.confirm('Restore the original sample data?')) reset() }} className="font-semibold text-brown underline">{t('Reset demo')}</button>
+      </p>
+    </>
+  )
+}
+
+// ---------- sign-up flows ----------
+
+function Steps({ n, of, title, children }: { n: number; of: number; title: string; children: ReactNode }) {
+  return (
+    <div className="pt-5">
+      <div className="mb-2 flex gap-1">{Array.from({ length: of }, (_, i) => <span key={i} className={`h-1.5 flex-1 rounded-full ${i < n ? 'bg-orange' : 'bg-brown-line'}`} />)}</div>
+      <div className="text-xs font-semibold text-brown-soft">Step {n} of {of}</div>
+      <h1 className="mb-4 text-2xl font-bold">{title}</h1>
+      {children}
     </div>
   )
 }
 
-export function Landing() {
+/** Mobile number + simulated WhatsApp OTP. */
+function OtpStep({ onDone, who }: { onDone: (mobile: string) => void; who: string }) {
+  const { t } = useLang()
+  const { whatsapp } = useDemo()
+  const [mobile, setMobile] = useState('')
+  const [sent, setSent] = useState(false)
+  const [otp, setOtp] = useState('')
   return (
-    <>
-      <TopBar />
-      <section className="pt-6">
-        <img src={LOGO_URL} alt="Makan Kaki logo" className="mb-5 h-28 w-28" />
-        <span className="chip bg-orange-soft text-brown">For hawkers, cafés &amp; local creators</span>
-        <h1 className="mt-4 text-4xl font-extrabold leading-[1.1]">
-          Local creators.<br />Real diners.<br /><span className="text-orange">Counted.</span>
-        </h1>
-        <p className="mt-4 text-lg text-brown-soft">
-          Makan Kaki matches hawker stalls and cafés with nano-creators from the same HDB town. Every post gets a
-          unique code, so you see exactly how many diners each video brought in.
-        </p>
-        <div className="mt-6 grid gap-3">
-          <Link to="/signup/owner" className="btn-primary">I run a stall or café</Link>
-          <Link to="/signup/creator" className="btn-secondary">I'm a creator</Link>
+    <div className="card space-y-4">
+      <Field label={t('Mobile number')}>
+        <div className="flex gap-2">
+          <span className="input flex w-20 items-center justify-center font-semibold">+65</span>
+          <input className="input" inputMode="tel" placeholder="9123 4567" value={mobile} onChange={(e) => setMobile(e.target.value)} />
         </div>
-      </section>
-
-      <section className="mt-10 grid gap-3">
-        {[
-          ['1', 'Owners post visit slots', 'Pick a date and time a creator can come film.'],
-          ['2', 'Creators book a makan', 'Approved creators in your HDB town book in under a minute and get a code like AA-ZELIA-4821.'],
-          ['3', 'Diners show the code', 'Staff type the code and the bill at the counter. Each code counts as one diner, and the creator earns 2% of the bill.'],
-          ['4', 'See what worked', 'Your dashboard shows diners per creator post and your cost per diner.'],
-        ].map(([n, t, d]) => (
-          <div key={n} className="card flex gap-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange font-heading text-lg font-bold text-white">{n}</div>
-            <div>
-              <h3 className="font-bold">{t}</h3>
-              <p className="text-sm text-brown-soft">{d}</p>
-            </div>
-          </div>
-        ))}
-      </section>
-
-      <section className="mt-10">
-        <h2 className="text-xl font-bold">Simple plans</h2>
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          {(Object.keys(PLANS) as Plan[]).map((p) => (
-            <div key={p} className="card">
-              <div className="font-heading font-bold">{PLANS[p].label}</div>
-              <div className="mt-1 font-heading text-2xl font-extrabold">S${PLANS[p].fee}<span className="text-sm font-semibold text-brown-soft">/mo</span></div>
-              <div className="mt-1 text-sm text-brown-soft">{PLANS[p].visits} creator visits a month, plus 10% of each redeemed diner's bill</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <p className="mt-10 text-center text-sm text-brown-soft">
-        Counter staff? <Link to="/signup/staff" className="link">Set up your staff login</Link>
-      </p>
-    </>
-  )
-}
-
-function useSignup(role: Role) {
-  const navigate = useNavigate()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [checkEmail, setCheckEmail] = useState(false)
-
-  async function submit(email: string, password: string, data: Record<string, unknown>, after: string) {
-    setBusy(true); setError('')
-    const { data: res, error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: { data: { role, ...data } },
-    })
-    setBusy(false)
-    if (error) { setError(errorText(error)); return }
-    if (!res.session) { setCheckEmail(true); return }
-    navigate(after, { replace: true })
-  }
-  return { busy, error, checkEmail, submit }
-}
-
-function CheckEmail() {
-  return (
-    <>
-      <TopBar />
-      <div className="card mt-6 text-center">
-        <h1 className="text-2xl font-bold">Check your email</h1>
-        <p className="mt-2 text-brown-soft">We sent you a link to confirm your account. Tap it, then log in.</p>
-        <Link to="/login" className="btn-primary mt-5 w-full">Go to log in</Link>
-      </div>
-    </>
-  )
-}
-
-function Account({ email, setEmail, password, setPassword }: {
-  email: string; setEmail: (v: string) => void; password: string; setPassword: (v: string) => void
-}) {
-  return (
-    <>
-      <Field label="Email">
-        <input className="input" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
       </Field>
-      <Field label="Password" hint="At least 6 characters">
-        <input className="input" type="password" autoComplete="new-password" minLength={6} required value={password} onChange={(e) => setPassword(e.target.value)} />
-      </Field>
-    </>
+      {!sent ? (
+        <button className="btn-primary w-full" disabled={mobile.replace(/\D/g, '').length !== 8}
+          onClick={() => { setSent(true); whatsapp(who, 'Your Makan Kaki code is 482913. It expires in 5 minutes.') }}>{t('Send WhatsApp code')}</button>
+      ) : (
+        <>
+          <Field label={t('Enter the 6-digit code')} hint="Demo: the code was 'sent' by WhatsApp. Any 6 digits work.">
+            <input className="input text-center font-mono text-2xl tracking-[0.4em]" inputMode="numeric" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} autoFocus />
+          </Field>
+          <button className="btn-primary w-full" disabled={otp.length !== 6} onClick={() => onDone(mobile)}>{t('Verify')}</button>
+        </>
+      )}
+    </div>
   )
 }
 
-function TownSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function LangChooser() {
+  const { lang, setLang } = useLang()
   return (
-    <select className="input" required value={value} onChange={(e) => onChange(e.target.value)}>
-      <option value="" disabled>Choose your HDB town</option>
-      {HDB_TOWNS.map((t) => <option key={t}>{t}</option>)}
-    </select>
-  )
-}
-
-export function SignupChoose() {
-  return (
-    <>
-      <TopBar />
-      <h1 className="mt-4 text-3xl font-bold">Join Makan Kaki</h1>
-      <p className="mt-1 text-brown-soft">Who are you signing up as?</p>
-      <div className="mt-6 grid gap-3">
-        <Link to="/signup/owner" className="card block border-2 border-transparent hover:border-orange">
-          <div className="font-heading text-lg font-bold">Outlet owner</div>
-          <div className="text-sm text-brown-soft">I run a hawker stall or café and want creators to visit.</div>
-        </Link>
-        <Link to="/signup/creator" className="card block border-2 border-transparent hover:border-orange">
-          <div className="font-heading text-lg font-bold">Creator</div>
-          <div className="text-sm text-brown-soft">I post food content and want to film at outlets in my HDB town.</div>
-        </Link>
-      </div>
-      <p className="mt-6 text-center text-sm text-brown-soft">
-        Counter staff? <Link to="/signup/staff" className="link">Set up your staff login</Link>
-      </p>
-    </>
+    <div className="mb-4 grid grid-cols-4 gap-2">
+      {LANGS.map((l) => (
+        <button key={l.id} onClick={() => setLang(l.id as Lang)}
+          className={`min-h-[48px] rounded-xl border-2 text-sm font-bold ${lang === l.id ? 'border-orange bg-orange-soft' : 'border-brown-line bg-white'}`}>{l.label}</button>
+      ))}
+    </div>
   )
 }
 
 export function SignupOwner() {
-  const { busy, error, checkEmail, submit } = useSignup('owner')
-  const [f, setF] = useState({ name: '', phone: '', outlet_name: '', address: '', hdb_town: '', cuisine: '', plan: 'hawker' as Plan })
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const set = (k: keyof typeof f) => (v: string) => setF((p) => ({ ...p, [k]: v }))
+  const { t } = useLang()
+  const { update, setSession, whatsapp } = useDemo()
+  const navigate = useNavigate()
+  const [step, setStep] = useState(1)
+  const [mobile, setMobile] = useState('')
+  const [f, setF] = useState({ name: '', address: '', unit: '', cuisine: '', hours: '', uen: '' })
+  const [plan, setPlan] = useState<PlanId>('hawker')
+  const [paynow, setPaynow] = useState('')
+  const [paying, setPaying] = useState(false)
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF((p) => ({ ...p, [k]: e.target.value }))
 
-  if (checkEmail) return <CheckEmail />
-  return (
-    <>
-      <TopBar />
-      <h1 className="mt-2 text-2xl font-bold">Register your outlet</h1>
-      <p className="mt-1 text-brown-soft">Takes about a minute. Next you'll add visit slots.</p>
-      <form className="mt-5 space-y-4" onSubmit={(e: FormEvent) => { e.preventDefault(); submit(email, password, f, '/owner/slots?welcome=1') }}>
-        <div className="card space-y-4">
-          <h2 className="font-bold">Your outlet</h2>
-          <Field label="Outlet name"><input className="input" required placeholder="e.g. Ah Seng Fishball Noodle" value={f.outlet_name} onChange={(e) => set('outlet_name')(e.target.value)} /></Field>
-          <Field label="Address"><input className="input" required placeholder="e.g. Blk 201D Tampines St 21, #01-12" value={f.address} onChange={(e) => set('address')(e.target.value)} /></Field>
-          <Field label="HDB town"><TownSelect value={f.hdb_town} onChange={set('hdb_town')} /></Field>
-          <Field label="Cuisine"><input className="input" required placeholder="e.g. Teochew noodles" value={f.cuisine} onChange={(e) => set('cuisine')(e.target.value)} /></Field>
-          <div>
-            <span className="label">Plan</span>
-            <div className="grid grid-cols-2 gap-3">
-              {(Object.keys(PLANS) as Plan[]).map((p) => (
-                <button type="button" key={p} onClick={() => set('plan')(p)}
-                  className={`rounded-xl border-2 p-3 text-left ${f.plan === p ? 'border-orange bg-orange-soft' : 'border-brown-line bg-white'}`}>
-                  <div className="font-bold">{PLANS[p].label}</div>
-                  <div className="text-sm text-brown-soft">S${PLANS[p].fee}/mo · {PLANS[p].visits} visits</div>
-                </button>
-              ))}
+  function finish() {
+    const id = `o${Date.now()}`
+    update((s) => {
+      s.outlets.push({
+        id, name: f.name, type: plan, area: 'Whampoa', address: f.address, unit: f.unit, cuisine: f.cuisine, hours: f.hours, uen: f.uen,
+        plan, paynow, paused: false, qrRequested: false, launchPack: false, visitsUsed: 0, rollover: 0, ownerName: 'New owner', mobile,
+      })
+    })
+    whatsapp(f.name, `Welcome to Makan Kaki! Your ${PLANS[plan].label} plan is active. Receipt: S$${(PLANS[plan].fee * PILOT_DISCOUNT).toFixed(2)} paid via HitPay.`)
+    setSession({ role: 'owner', id })
+    navigate('/owner/more/menu')
+  }
+
+  if (step === 1) return (
+    <Steps n={1} of={4} title={`${t('Sign up')}: business owner`}>
+      <p className="mb-2 text-sm font-semibold">{t('Choose your language')}</p>
+      <LangChooser />
+      <OtpStep who="new owner" onDone={(m) => { setMobile(m); setStep(2) }} />
+    </Steps>
+  )
+  if (step === 2) return (
+    <Steps n={2} of={4} title={t('Stall profile')}>
+      <form className="card space-y-4" onSubmit={(e) => { e.preventDefault(); setStep(3) }}>
+        <Field label="Stall name"><input className="input" required value={f.name} onChange={set('name')} placeholder="e.g. Whampoa Prawn Noodles" /></Field>
+        <Field label="Hawker centre or address"><input className="input" required value={f.address} onChange={set('address')} placeholder="e.g. 90 Whampoa Drive" /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Unit number"><input className="input" required value={f.unit} onChange={set('unit')} placeholder="#01-32" /></Field>
+          <Field label="Cuisine"><input className="input" required value={f.cuisine} onChange={set('cuisine')} placeholder="Noodles" /></Field>
+        </div>
+        <Field label="Opening hours"><input className="input" required value={f.hours} onChange={set('hours')} placeholder="7 am – 2 pm, closed Tue" /></Field>
+        <Field label="UEN (only if a company)"><input className="input" value={f.uen} onChange={set('uen')} placeholder="Optional" /></Field>
+        <button className="btn-primary w-full">{t('Continue')}</button>
+      </form>
+    </Steps>
+  )
+  if (step === 3) return (
+    <Steps n={3} of={4} title={t('Choose a plan')}>
+      <div className="grid gap-3">
+        {(Object.keys(PLANS) as PlanId[]).map((p) => (
+          <button key={p} onClick={() => setPlan(p)} className={`card border-2 text-left ${plan === p ? 'border-orange' : 'border-transparent'}`}>
+            <div className="flex items-baseline justify-between">
+              <span className="font-heading text-lg font-bold">{PLANS[p].label}</span>
+              <span className="font-heading text-xl font-extrabold">S${PLANS[p].fee}<span className="text-sm font-semibold text-brown-soft">/mo</span></span>
             </div>
+            <div className="text-sm text-brown-soft">{PLANS[p].visits} creator visits a month. Unused visits roll over one month.</div>
+            <div className="mt-1 text-sm">+ 10% commission on coded orders only</div>
+          </button>
+        ))}
+      </div>
+      <div className="mt-3"><Alert kind="info">Pilot offer: first paid month 50% off, S${(PLANS[plan].fee * PILOT_DISCOUNT).toFixed(2)}</Alert></div>
+      <button onClick={() => setStep(4)} className="btn-primary mt-4 w-full">{t('Continue')}</button>
+    </Steps>
+  )
+  return (
+    <Steps n={4} of={4} title={t('Pay and payout setup')}>
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between"><span className="font-semibold">{PLANS[plan].label} plan, first month</span><span className="font-heading font-bold">S${(PLANS[plan].fee * PILOT_DISCOUNT).toFixed(2)}</span></div>
+        <div className="text-xs text-brown-soft">Then S${PLANS[plan].fee}/month, auto-renews. Receipts by email and WhatsApp.</div>
+        <div className="rounded-xl bg-cream p-3">
+          <div className="text-xs font-bold uppercase tracking-wide text-brown-soft">HitPay checkout</div>
+          <div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs font-semibold">
+            {['PayNow', 'Card', 'GrabPay'].map((m, i) => <div key={m} className={`rounded-lg border-2 py-2 ${i === 0 ? 'border-orange bg-white' : 'border-brown-line'}`}>{m}</div>)}
           </div>
         </div>
-        <div className="card space-y-4">
-          <h2 className="font-bold">About you</h2>
-          <Field label="Your name"><input className="input" required autoComplete="name" value={f.name} onChange={(e) => set('name')(e.target.value)} /></Field>
-          <Field label="Phone"><input className="input" required type="tel" inputMode="tel" autoComplete="tel" placeholder="e.g. 9123 4567" value={f.phone} onChange={(e) => set('phone')(e.target.value)} /></Field>
-          <Account email={email} setEmail={setEmail} password={password} setPassword={setPassword} />
-        </div>
-        {error && <Alert kind="bad">{error}</Alert>}
-        <button className="btn-primary w-full" disabled={busy}>{busy ? 'Creating…' : 'Register my outlet'}</button>
-        <p className="text-center text-xs text-brown-soft">We only collect what we need to run Makan Kaki (PDPA).</p>
-      </form>
-    </>
+      </div>
+      <div className="card mt-3 space-y-3">
+        <Field label="PayNow number for your payouts" hint="Coded order money (minus 10%) is paid here the next working day.">
+          <input className="input" inputMode="tel" value={paynow} onChange={(e) => setPaynow(e.target.value)} placeholder="9123 4567 or UEN" />
+        </Field>
+      </div>
+      <div className="mt-3"><DemoNote>No real payment is made. Tapping Pay simulates a successful HitPay payment.</DemoNote></div>
+      <button className="btn-primary mt-4 w-full" disabled={paying || !paynow.trim()} onClick={() => { setPaying(true); setTimeout(finish, 1200) }}>
+        {paying ? 'Processing with HitPay…' : `Pay S$${(PLANS[plan].fee * PILOT_DISCOUNT).toFixed(2)}`}
+      </button>
+    </Steps>
   )
 }
+
+const PLATFORMS: Platform[] = ['TikTok', 'Instagram', 'Lemon8', 'Xiaohongshu']
+const CREATOR_LANGS = ['English', 'Mandarin', 'Malay', 'Tamil', 'Hokkien', 'Cantonese']
+const CUISINES = ['Hawker', 'Café', 'Chinese', 'Malay', 'Indian', 'Peranakan', 'Desserts', 'Western', 'Noodles', 'Prata']
 
 export function SignupCreator() {
-  const { busy, error, checkEmail, submit } = useSignup('creator')
-  const [f, setF] = useState({ name: '', phone: '', social_handle: '', platform: 'TikTok', follower_count: '', hdb_town: '' })
-  const [langs, setLangs] = useState<string[]>(['English'])
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const set = (k: keyof typeof f) => (v: string) => setF((p) => ({ ...p, [k]: v }))
-  const toggle = (l: string) => setLangs((p) => (p.includes(l) ? p.filter((x) => x !== l) : [...p, l]))
-
-  if (checkEmail) return <CheckEmail />
-  return (
-    <>
-      <TopBar />
-      <h1 className="mt-2 text-2xl font-bold">Sign up as a creator</h1>
-      <p className="mt-1 text-brown-soft">Our team approves every creator before they can book visits.</p>
-      <form className="mt-5 space-y-4" onSubmit={(e: FormEvent) => {
-        e.preventDefault()
-        submit(email, password, { ...f, social_handle: f.social_handle.trim().replace(/^@?/, '@'), follower_count: Number(f.follower_count), languages: langs }, '/creator')
-      }}>
-        <div className="card space-y-4">
-          <Field label="Your name"><input className="input" required autoComplete="name" value={f.name} onChange={(e) => set('name')(e.target.value)} /></Field>
-          <Field label="Phone"><input className="input" required type="tel" inputMode="tel" autoComplete="tel" value={f.phone} onChange={(e) => set('phone')(e.target.value)} /></Field>
-          <Field label="Social handle"><input className="input" required placeholder="@yourhandle" value={f.social_handle} onChange={(e) => set('social_handle')(e.target.value)} /></Field>
-          <Field label="Main platform">
-            <select className="input" value={f.platform} onChange={(e) => set('platform')(e.target.value)}>
-              {PLATFORMS.map((p) => <option key={p}>{p}</option>)}
-            </select>
-          </Field>
-          <Field label="Follower count"><input className="input" required type="number" inputMode="numeric" min={0} value={f.follower_count} onChange={(e) => set('follower_count')(e.target.value)} /></Field>
-          <Field label="HDB town you live in"><TownSelect value={f.hdb_town} onChange={set('hdb_town')} /></Field>
-          <div>
-            <span className="label">Languages you post in</span>
-            <div className="flex flex-wrap gap-2">
-              {LANGUAGES.map((l) => (
-                <button type="button" key={l} onClick={() => toggle(l)}
-                  className={`min-h-[44px] rounded-full border-2 px-4 text-sm font-semibold ${langs.includes(l) ? 'border-orange bg-orange-soft' : 'border-brown-line bg-white'}`}>
-                  {l}
-                </button>
-              ))}
-            </div>
-          </div>
-          <Account email={email} setEmail={setEmail} password={password} setPassword={setPassword} />
-        </div>
-        {error && <Alert kind="bad">{error}</Alert>}
-        <button className="btn-primary w-full" disabled={busy || langs.length === 0}>{busy ? 'Creating…' : 'Sign me up'}</button>
-        <p className="text-center text-xs text-brown-soft">We only collect what we need to run Makan Kaki (PDPA).</p>
-      </form>
-    </>
-  )
-}
-
-export function SignupStaff() {
-  const { busy, error, checkEmail, submit } = useSignup('staff')
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  if (checkEmail) return <CheckEmail />
-  return (
-    <>
-      <TopBar />
-      <h1 className="mt-2 text-2xl font-bold">Counter staff login</h1>
-      <p className="mt-1 text-brown-soft">Use the email your outlet owner added for you. Staff can only redeem codes.</p>
-      <form className="card mt-5 space-y-4" onSubmit={(e) => { e.preventDefault(); submit(email, password, { name }, '/staff') }}>
-        <Field label="Your name"><input className="input" required value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <Account email={email} setEmail={setEmail} password={password} setPassword={setPassword} />
-        {error && <Alert kind="bad">{error}</Alert>}
-        <button className="btn-primary w-full" disabled={busy}>{busy ? 'Creating…' : 'Create staff login'}</button>
-      </form>
-    </>
-  )
-}
-
-export function Login() {
+  const { t } = useLang()
+  const { update, setSession } = useDemo()
   const navigate = useNavigate()
-  const location = useLocation()
-  const from = (location.state as { from?: string } | null)?.from
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [step, setStep] = useState(1)
+  const [mobile, setMobile] = useState('')
+  const [platform, setPlatform] = useState<Platform>('TikTok')
+  const [handle, setHandle] = useState('')
+  const [linking, setLinking] = useState(false)
+  const [followers, setFollowers] = useState<number | null>(null)
+  const [name, setName] = useState('')
+  const [langs, setLangs] = useState<string[]>(['English'])
+  const [cuisines, setCuisines] = useState<string[]>(['Hawker'])
+  const [samples, setSamples] = useState(['', ''])
+  const [paynow, setPaynow] = useState('')
+  const toggle = (arr: string[], set: (v: string[]) => void, v: string) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v])
+  const okFollowers = followers !== null && followers >= 1000 && followers <= 10000
 
-  async function logIn(em: string, pw: string) {
-    setBusy(true); setError('')
-    const { data, error } = await supabase.auth.signInWithPassword({ email: em.trim(), password: pw })
-    if (error || !data.user) { setBusy(false); setError(errorText(error)); return }
-    const { data: p } = await supabase.from('profiles').select('role').eq('id', data.user.id).single()
-    setBusy(false)
-    const home = homeFor(p?.role)
-    navigate(from && from.startsWith(home) ? from : home, { replace: true })
+  function link() {
+    setLinking(true)
+    // demo: pretend to read the follower count from the platform
+    const n = 1000 + ([...handle].reduce((s, c) => s + c.charCodeAt(0), 0) * 37) % 9500
+    setTimeout(() => { setFollowers(handle.toLowerCase().includes('big') ? 48200 : n); setLinking(false) }, 900)
   }
-  function onSubmit(e: FormEvent) {
-    e.preventDefault()
-    logIn(email, password)
-  }
-  async function reset() {
-    if (!window.confirm('Delete everything in this demo and restore the sample data?')) return
-    setBusy(true)
-    await resetDemoData()
-    setBusy(false)
-    setError('')
+  function finish() {
+    const id = `c${Date.now()}`
+    const clean = handle.replace(/^@?/, '@')
+    update((s) => {
+      s.creators.push({
+        id, name, handle: clean, platform, followers: followers ?? 0, languages: langs, cuisines, status: 'pending',
+        code: `AA-${name.split(' ')[0].toUpperCase().replace(/[^A-Z]/g, '') || 'KAKI'}`, paynow, rating: 0, strikes: 0, area: 'Singapore',
+        samplePosts: samples.filter(Boolean), engagement: 5,
+      })
+    })
+    setSession({ role: 'creator', id })
+    navigate('/creator')
   }
 
-  return (
-    <>
-      <TopBar />
-      <h1 className="mt-4 text-3xl font-bold">Welcome back</h1>
-      {from && <p className="mt-1 text-brown-soft">Please log in to continue.</p>}
-      <form className="card mt-5 space-y-4" onSubmit={onSubmit}>
-        <Field label="Email"><input className="input" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
-        <Field label="Password"><input className="input" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
-        {error && <Alert kind="bad">{error}</Alert>}
-        <button className="btn-primary w-full" disabled={busy}>{busy ? 'Logging in…' : 'Log in'}</button>
-      </form>
-      <p className="mt-6 text-center text-brown-soft">New here? <Link to="/signup" className="link">Sign up</Link></p>
+  const chips = (all: string[], sel: string[], set: (v: string[]) => void) => (
+    <div className="flex flex-wrap gap-2">
+      {all.map((v) => (
+        <button key={v} type="button" onClick={() => toggle(sel, set, v)}
+          className={`min-h-[40px] rounded-full border-2 px-3 text-sm font-semibold ${sel.includes(v) ? 'border-orange bg-orange-soft' : 'border-brown-line bg-white'}`}>{v}</button>
+      ))}
+    </div>
+  )
 
-      <section className="mt-10">
-        <h2 className="text-lg font-bold">Demo accounts</h2>
-        <p className="text-sm text-brown-soft">Tap one to log in. Every demo password is <span className="font-mono font-semibold text-brown">{DEMO_PASSWORD}</span>.</p>
-        <div className="mt-3 grid gap-2">
-          {DEMO_ACCOUNTS.map((a) => (
-            <button key={a.email} disabled={busy} onClick={() => logIn(a.email, DEMO_PASSWORD)}
-              className="card flex min-h-[56px] items-center justify-between gap-3 py-3 text-left transition active:scale-[0.99]">
-              <span className="min-w-0">
-                <span className="block font-bold">{a.label} <span className="font-normal text-brown-soft">· {a.note}</span></span>
-                <span className="block truncate text-xs text-brown-soft">{a.email}</span>
-              </span>
-              <span aria-hidden className="text-xl text-brown-soft">›</span>
-            </button>
+  if (step === 1) return (
+    <Steps n={1} of={4} title={`${t('Sign up')}: creator`}>
+      <LangChooser />
+      <OtpStep who="new creator" onDone={(m) => { setMobile(m); setStep(2) }} />
+      <input type="hidden" value={mobile} readOnly />
+    </Steps>
+  )
+  if (step === 2) return (
+    <Steps n={2} of={4} title="Link your account">
+      <div className="card space-y-4">
+        <div className="grid grid-cols-2 gap-2">
+          {PLATFORMS.map((p) => (
+            <button key={p} onClick={() => { setPlatform(p); setFollowers(null) }}
+              className={`min-h-[48px] rounded-xl border-2 text-sm font-bold ${platform === p ? 'border-orange bg-orange-soft' : 'border-brown-line bg-white'}`}>{p}</button>
           ))}
         </div>
-        <p className="mt-3 text-xs text-brown-soft">
-          Data is saved in this browser only. Each tab can be logged in as a different person.{' '}
-          <button onClick={reset} disabled={busy} className="font-semibold text-brown underline underline-offset-2">Reset demo data</button>
-        </p>
-      </section>
-    </>
+        <Field label={`${platform} handle`}><input className="input" value={handle} onChange={(e) => { setHandle(e.target.value); setFollowers(null) }} placeholder="@yourhandle" /></Field>
+        <button className="btn-secondary w-full" disabled={!handle.trim() || linking} onClick={link}>{linking ? 'Checking followers…' : `Link ${platform}`}</button>
+        {followers !== null && (okFollowers
+          ? <Alert kind="ok">✓ {followers.toLocaleString('en-SG')} followers, within 1,000–10,000</Alert>
+          : <Alert kind="bad">{followers.toLocaleString('en-SG')} followers. Makan Kaki is for creators with 1,000–10,000 followers.</Alert>)}
+        <DemoNote>The follower check is simulated. Try a handle containing "big" to see a rejection.</DemoNote>
+      </div>
+      <div className="card mt-3 space-y-4">
+        <Field label="Your name"><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+        <div><span className="label">Languages you post in</span>{chips(CREATOR_LANGS, langs, setLangs)}</div>
+        <div><span className="label">Cuisines you like</span>{chips(CUISINES, cuisines, setCuisines)}</div>
+        <p className="text-xs text-brown-soft">You can take visits anywhere in Singapore.</p>
+      </div>
+      <button className="btn-primary mt-4 w-full" disabled={!okFollowers || !name.trim() || !langs.length} onClick={() => setStep(3)}>{t('Continue')}</button>
+    </Steps>
+  )
+  if (step === 3) return (
+    <Steps n={3} of={4} title="Sample posts">
+      <div className="card space-y-3">
+        <p className="text-sm text-brown-soft">Add 2 recent food posts. Makan Kaki checks for real followers, food content and engagement.</p>
+        {samples.map((s, i) => (
+          <input key={i} className="input" type="url" placeholder="https://…" value={s} onChange={(e) => setSamples((p) => p.map((x, j) => (j === i ? e.target.value : x)))} />
+        ))}
+      </div>
+      <button className="btn-primary mt-4 w-full" disabled={!samples[0].trim()} onClick={() => setStep(4)}>{t('Continue')}</button>
+    </Steps>
+  )
+  return (
+    <Steps n={4} of={4} title="Payout setup">
+      <div className="card space-y-3">
+        <div className="flex items-center gap-3"><Avatar name={name} /><div><div className="font-bold">{name}</div><div className="text-sm text-brown-soft">{handle} · {platform} · {followers?.toLocaleString('en-SG')} followers</div></div></div>
+        <Field label="PayNow number" hint="Needed before your first visit. Visit fees and commission are paid monthly.">
+          <input className="input" inputMode="tel" value={paynow} onChange={(e) => setPaynow(e.target.value)} placeholder="8123 4567" />
+        </Field>
+      </div>
+      <button className="btn-primary mt-4 w-full" disabled={!paynow.trim()} onClick={finish}>Submit for approval</button>
+    </Steps>
   )
 }

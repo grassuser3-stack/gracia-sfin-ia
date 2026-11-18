@@ -29,7 +29,6 @@ jobs:
           cache: npm
           cache-dependency-path: makan-kaki/package-lock.json
       - run: npm ci
-      - run: npm run test:db
       - run: npm run build
         env:
           BASE_PATH: /${{ github.event.repository.name }}/
