@@ -17,11 +17,15 @@ The login page lists one-tap demo logins for every role. All of them use the pas
 | Account | Role |
 |---|---|
 | admin@makankaki.test | Admin (founder) |
-| owner@makankaki.test | Owner of Ah Seng Fishball Noodle (Hawker plan) |
-| cafe@makankaki.test | Owner of Kopi & Toast Co. (Café plan) |
-| staff@makankaki.test | Counter staff at Ah Seng |
-| jason@makankaki.test, priya@makankaki.test | Approved creators in Tampines |
+| owner@makankaki.test | Owner of Xiao Nong Tian (Hawker plan, Woodlands) |
+| cafe@makankaki.test | Owner of All Hands Café (Café plan, Woodlands) |
+| staff@makankaki.test | Counter staff at Xiao Nong Tian |
+| foodieboonie@gmail.com | Zelia (@foodieboonie on Instagram), approved creator in Woodlands |
+| priya@makankaki.test | Approved creator in Tampines |
 | wei@makankaki.test | Creator waiting for approval |
+| ahseng@makankaki.test | Owner of Ah Seng Fishball Noodle (Hawker plan, Tampines), not listed on the login page |
+
+The sample data lives in `src/lib/local/setup.ts`. After changing it, bump `SEED_VERSION` there so browsers with the old data load the new version.
 
 The sample data includes:
 - a completed post with diners
