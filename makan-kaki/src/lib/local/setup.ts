@@ -8,7 +8,7 @@ import { hashPassword } from './hash'
  * Bump this whenever the sample data or schema changes. Browsers holding an
  * older version are reset to the new sample data automatically.
  */
-const SEED_VERSION = 3
+const SEED_VERSION = 4
 
 const BOOTSTRAP = `
   do $$ begin create role anon nologin; exception when duplicate_object then null; end $$;
@@ -37,7 +37,6 @@ export const DEMO_ACCOUNTS = [
   { email: 'admin@makankaki.test', label: 'Admin', note: 'Founder' },
   { email: 'owner@makankaki.test', label: 'Owner', note: 'Xiao Nong Tian (Hawker)' },
   { email: 'cafe@makankaki.test', label: 'Owner', note: 'All Hands Café (Café)' },
-  { email: 'staff@makankaki.test', label: 'Staff', note: 'Counter staff at Xiao Nong Tian' },
   { email: 'foodieboonie@gmail.com', label: 'Creator', note: 'Approved, Woodlands' },
   { email: 'priya@makankaki.test', label: 'Creator', note: 'Approved, Tampines' },
   { email: 'wei@makankaki.test', label: 'Creator', note: 'Waiting for approval' },
@@ -113,17 +112,20 @@ async function seed(db: PGliteInterface) {
     (await db.query<{ id: string }>(`insert into visit_slots (outlet_id, slot_date, start_time, status) values ($1, sg_today() + $2::int, $3, $4) returning id`, [outlet, daysFromToday, time, status])).rows[0].id
   const booking = async (slotId: string, creatorId: string, code: string, status: string, link: string | null, daysAgoBooked: number) =>
     (await db.query<{ id: string }>(`insert into bookings (slot_id, creator_id, code, status, post_link, booked_at) values ($1, $2, $3, $4, $5, now() - make_interval(days => $6)) returning id`, [slotId, creatorId, code, status, link, daysAgoBooked])).rows[0].id
-  // n redemptions spread over the last few days (kept inside the current month)
-  const redeem = async (bookingId: string, n: number) => db.query(
-    `insert into redemptions (booking_id, redeemed_at)
-     select $1, greatest(now() - make_interval(hours => g * 5), date_trunc('month', now() at time zone 'Asia/Singapore') at time zone 'Asia/Singapore' + interval '1 hour')
-     from generate_series(1, $2::int) g`, [bookingId, n])
+  // n redemptions spread over the last few days (kept inside the current month), with
+  // realistic bills in 50-cent steps: hawker S$4.50–12.00, café S$9.00–20.50 (same every time).
+  const redeem = async (bookingId: string, n: number, kind: 'hawker' | 'cafe') => db.query(
+    `insert into redemptions (booking_id, redeemed_at, bill_amount)
+     select $1,
+       greatest(now() - make_interval(hours => g * 5), date_trunc('month', now() at time zone 'Asia/Singapore') at time zone 'Asia/Singapore' + interval '1 hour'),
+       $3::numeric + ((g * 7) % $4::int) * 0.5
+     from generate_series(1, $2::int) g`, [bookingId, n, kind === 'hawker' ? 4.5 : 9, kind === 'hawker' ? 16 : 24])
 
   // Xiao Nong Tian (Hawker, Woodlands): Zelia's completed post, Priya's visit waiting for a post link
   const b1 = await booking(await slot(xiaoNongTian, -6, '11:00', 'booked'), zelia, 'AA-ZELIA-4821', 'completed', 'https://www.instagram.com/p/DGu-ZFMBo0r/', 8)
-  await redeem(b1, 22)
+  await redeem(b1, 22, 'hawker')
   const b2 = await booking(await slot(xiaoNongTian, -2, '15:00', 'booked'), priya, 'AA-PRIYA-3307', 'booked', null, 5)
-  await redeem(b2, 3)
+  await redeem(b2, 3, 'hawker')
   await slot(xiaoNongTian, 3, '10:30')
   await slot(xiaoNongTian, 9, '14:00')
 
@@ -135,7 +137,7 @@ async function seed(db: PGliteInterface) {
 
   // Ah Seng Fishball Noodle (Hawker, Tampines): Priya's missed post, open slots
   const b4 = await booking(await slot(ahSeng, -9, '08:30', 'booked'), priya, 'AA-PRIYA-9042', 'booked', null, 12)
-  await redeem(b4, 2)
+  await redeem(b4, 2, 'hawker')
   await slot(ahSeng, 3, '11:00')
   await slot(ahSeng, 5, '14:30')
 }

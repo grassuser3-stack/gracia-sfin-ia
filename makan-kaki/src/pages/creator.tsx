@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase, errorText } from '../lib/supabase'
-import { fmtDate, fmtDateLong, fmtTime, sgToday } from '../lib/format'
+import { fmtDate, fmtDateLong, fmtTime, sgd, sgToday } from '../lib/format'
 import { Alert, Empty, Field, PageTitle, Spinner, StatusChip } from '../components/ui'
 
 type CreatorMe = { approval_status: 'pending' | 'approved' | 'rejected'; hdb_town: string }
@@ -9,7 +9,7 @@ type OpenSlot = { slot_id: string; slot_date: string; start_time: string; outlet
 type MyBooking = {
   booking_id: string; code: string; status: string; booked_at: string; post_link: string | null
   slot_date: string; start_time: string; outlet_name: string; address: string; cuisine: string
-  redemptions: number; code_valid_until: string
+  redemptions: number; earnings: string; code_valid_until: string
 }
 
 function useCreatorMe() {
@@ -139,7 +139,7 @@ export function SlotDetail() {
         </div>
       </div>
       <div className="mt-4 rounded-xl bg-orange-soft px-4 py-3 text-sm">
-        You'll get a unique code to put in your post. Each diner who shows it at the counter counts toward your results.
+        You'll get a unique code to put in your post. Each diner who shows it at the counter counts toward your results, and you earn 2% of their bill.
       </div>
       {error && <div className="mt-4"><Alert kind="bad">{error}</Alert></div>}
       <button onClick={book} disabled={busy} className="btn-primary mt-5 w-full">{busy ? 'Booking…' : 'Book a makan'}</button>
@@ -194,7 +194,16 @@ export function MyBookings() {
   return (
     <>
       <PageTitle title="My bookings" />
-      {rows.length === 0 ? <Empty>No bookings yet. <Link to="/creator" className="link">Find a visit</Link></Empty> : (
+      {rows.length > 0 && (
+        <div className="card mb-4 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-brown-soft">Total earned</div>
+            <div className="text-xs text-brown-soft">2% of every bill your codes bring in, paid by Makan Kaki</div>
+          </div>
+          <div className="font-heading text-2xl font-bold">{sgd(rows.reduce((t, b) => t + Number(b.earnings), 0))}</div>
+        </div>
+      )}
+      {rows.length === 0 ?<Empty>No bookings yet. <Link to="/creator" className="link">Find a visit</Link></Empty> : (
         <div className="space-y-3">
           {rows.map((b) => {
             const canSubmit = b.status === 'booked' && today >= b.slot_date
@@ -209,7 +218,10 @@ export function MyBookings() {
                 </div>
                 <div className="mt-3 flex items-center justify-between rounded-xl bg-cream px-3 py-2">
                   <span className={`font-mono font-bold ${b.status === 'cancelled' ? 'line-through text-brown-soft' : ''}`}>{b.code}</span>
-                  <span className="text-sm"><span className="font-heading text-lg font-bold">{b.redemptions}</span> diners</span>
+                  <span className="text-right text-sm">
+                    <span className="font-heading text-lg font-bold">{b.redemptions}</span> diners
+                    <span className="block text-xs font-semibold text-ok">You earned {sgd(Number(b.earnings))}</span>
+                  </span>
                 </div>
                 {b.post_link && <a href={b.post_link} target="_blank" rel="noreferrer" className="link mt-2 inline-block text-sm">View my post</a>}
                 {canSubmit && <Link to={`/creator/bookings/${b.booking_id}/post`} className="btn-primary mt-3 w-full">Submit my post</Link>}

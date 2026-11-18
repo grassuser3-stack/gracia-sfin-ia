@@ -11,14 +11,18 @@ type AdminCreator = {
 type AdminOutlet = {
   id: string; name: string; address: string; hdb_town: string; cuisine: string; plan: Plan
   owner_name: string; owner_email: string; owner_phone: string
-  open_slots: number; bookings_month: number; redemptions_month: number
+  open_slots: number; bookings_month: number; redemptions_month: number; spend_month: string
 }
 type AdminBooking = {
   booking_id: string; code: string; status: string; booked_at: string; post_link: string | null
   slot_date: string; start_time: string; outlet_name: string; hdb_town: string
-  creator_name: string; social_handle: string; platform: string; redemptions: number
+  creator_name: string; social_handle: string; platform: string; redemptions: number; spend: string
 }
-type BillingRow = { outlet_name: string; plan: Plan; plan_fee: number; redemptions: number; redemption_fees: number; total_owed: number }
+type BillingRow = {
+  outlet_name: string; plan: Plan; plan_fee: string; redemptions: number
+  diner_spend: string; commission: string; total_owed: string; creator_payouts: string
+}
+type PayoutRow = { creator_name: string; social_handle: string; email: string; phone: string; redemptions: number; diner_spend: string; payout: string }
 
 function useRpc<T>(fn: string) {
   const [rows, setRows] = useState<T[] | null>(null)
@@ -145,7 +149,7 @@ export function AdminOutlets() {
               <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                 <Mini label="Open slots" v={o.open_slots} />
                 <Mini label="Visits" v={`${o.bookings_month}/${PLANS[o.plan].visits}`} />
-                <Mini label="Diners" v={o.redemptions_month} />
+                <Mini label={`Diners · ${sgd(Number(o.spend_month))}`} v={o.redemptions_month} />
               </div>
             </div>
           ))}
@@ -203,7 +207,7 @@ export function AdminBookings() {
               </div>
               <div className="mt-2 flex items-center justify-between rounded-xl bg-cream px-3 py-2 text-sm">
                 <span className="font-mono font-bold">{b.code}</span>
-                <span>{b.redemptions} diners</span>
+                <span>{b.redemptions} diners · {sgd(Number(b.spend))}</span>
               </div>
               {b.post_link && <a href={b.post_link} target="_blank" rel="noreferrer" className="link mt-2 inline-block break-all text-sm">{b.post_link}</a>}
               {b.status !== 'cancelled' && (
@@ -277,59 +281,105 @@ function csvCell(v: string | number) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
+function downloadCsv(filename: string, head: string[], rows: (string | number)[][]) {
+  const lines = rows.map((r) => r.map(csvCell).join(','))
+  const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
+const money = (v: string | number) => Number(v).toFixed(2)
+
 export function AdminBilling() {
   const [month, setMonth] = useState(sgMonth())
   const [rows, setRows] = useState<BillingRow[] | null>(null)
+  const [payouts, setPayouts] = useState<PayoutRow[] | null>(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    setRows(null)
-    supabase.rpc('admin_billing', { p_month: `${month}-01` }).then(({ data, error }) => {
+    setRows(null); setPayouts(null)
+    const p_month = `${month}-01`
+    supabase.rpc('admin_billing', { p_month }).then(({ data, error }) => {
       if (error) setError(errorText(error))
       setRows((data as BillingRow[]) ?? [])
     })
+    supabase.rpc('admin_creator_payouts', { p_month }).then(({ data, error }) => {
+      if (error) setError(errorText(error))
+      setPayouts((data as PayoutRow[]) ?? [])
+    })
   }, [month])
 
-  function download() {
+  function downloadBilling() {
     if (!rows) return
-    const head = ['outlet name', 'plan', 'plan fee (SGD)', 'number of redemptions', 'redemption fees (SGD)', 'total amount owed (SGD)']
-    const lines = rows.map((r) => [r.outlet_name, PLANS[r.plan].label, Number(r.plan_fee).toFixed(2), r.redemptions, Number(r.redemption_fees).toFixed(2), Number(r.total_owed).toFixed(2)].map(csvCell).join(','))
-    const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `makan-kaki-billing-${month}.csv`
-    a.click()
-    URL.revokeObjectURL(a.href)
+    downloadCsv(`makan-kaki-billing-${month}.csv`,
+      ['outlet name', 'plan', 'plan fee (SGD)', 'number of redemptions', 'diner spend (SGD)', 'commission 10% (SGD)', 'total amount owed (SGD)', 'creator payouts 2% (SGD)'],
+      rows.map((r) => [r.outlet_name, PLANS[r.plan].label, money(r.plan_fee), r.redemptions, money(r.diner_spend), money(r.commission), money(r.total_owed), money(r.creator_payouts)]))
+  }
+  function downloadPayouts() {
+    if (!payouts) return
+    downloadCsv(`makan-kaki-creator-payouts-${month}.csv`,
+      ['creator name', 'social handle', 'email', 'phone', 'number of redemptions', 'diner spend (SGD)', 'payout 2% (SGD)'],
+      payouts.map((p) => [p.creator_name, p.social_handle, p.email, p.phone, p.redemptions, money(p.diner_spend), money(p.payout)]))
   }
 
-  const total = rows?.reduce((s, r) => s + Number(r.total_owed), 0) ?? 0
+  const sum = (k: keyof BillingRow) => rows?.reduce((s, r) => s + Number(r[k]), 0) ?? 0
+  const owed = sum('total_owed')
+  const toCreators = payouts?.reduce((s, p) => s + Number(p.payout), 0) ?? 0
   return (
     <>
-      <PageTitle title="Monthly billing" subtitle="One row per outlet. Invoice by PayNow." />
+      <PageTitle title="Monthly billing" subtitle="Outlets pay their plan + 10% of diners' bills. Creators get a fifth of that commission (2% of bills). Settle by PayNow." />
       <div className="card space-y-4">
         <Field label="Month"><input className="input" type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} /></Field>
-        <button className="btn-primary w-full" disabled={!rows || rows.length === 0} onClick={download}>Download CSV</button>
+        <div className="grid grid-cols-2 gap-2">
+          <button className="btn-primary min-h-[52px] px-3 text-base" disabled={!rows || rows.length === 0} onClick={downloadBilling}>Outlet billing CSV</button>
+          <button className="btn-secondary min-h-[52px] px-3 text-base" disabled={!payouts || payouts.length === 0} onClick={downloadPayouts}>Creator payouts CSV</button>
+        </div>
       </div>
       {error && <div className="mt-4"><Alert kind="bad">{error}</Alert></div>}
-      {!rows ? <Spinner /> : rows.length === 0 ? <div className="mt-4"><Empty>No outlets for {fmtMonth(month)}.</Empty></div> : (
+      {!rows || !payouts ? <Spinner /> : (
         <>
-          <div className="mt-6 mb-3 flex items-baseline justify-between">
-            <h2 className="text-lg font-bold">{fmtMonth(month)}</h2>
-            <span className="font-heading font-bold">{sgd(total)} total</span>
+          <div className="mt-5 grid grid-cols-3 gap-2 text-center">
+            <Mini label="Outlets owe" v={sgd(owed)} />
+            <Mini label="To creators" v={sgd(toCreators)} />
+            <Mini label="We keep" v={sgd(owed - toCreators)} />
           </div>
-          <div className="space-y-3">
-            {rows.map((r) => (
-              <div key={r.outlet_name} className="card">
-                <div className="flex justify-between gap-3">
-                  <div className="font-bold">{r.outlet_name}</div>
-                  <div className="font-heading font-bold">{sgd(Number(r.total_owed))}</div>
+
+          <h2 className="mt-6 mb-3 text-lg font-bold">Outlets · {fmtMonth(month)}</h2>
+          {rows.length === 0 ? <Empty>No outlets for {fmtMonth(month)}.</Empty> : (
+            <div className="space-y-3">
+              {rows.map((r) => (
+                <div key={r.outlet_name} className="card">
+                  <div className="flex justify-between gap-3">
+                    <div className="font-bold">{r.outlet_name}</div>
+                    <div className="font-heading font-bold">{sgd(Number(r.total_owed))}</div>
+                  </div>
+                  <div className="mt-1 text-sm text-brown-soft">
+                    {PLANS[r.plan].label} plan {sgd(Number(r.plan_fee))} + 10% of {sgd(Number(r.diner_spend))} from {r.redemptions} diners = {sgd(Number(r.commission))}
+                  </div>
                 </div>
-                <div className="mt-1 text-sm text-brown-soft">
-                  {PLANS[r.plan].label} plan {sgd(Number(r.plan_fee))} + {r.redemptions} diners × S$1 = {sgd(Number(r.redemption_fees))}
+              ))}
+            </div>
+          )}
+
+          <h2 className="mt-8 mb-3 text-lg font-bold">Creator payouts · {fmtMonth(month)}</h2>
+          {payouts.length === 0 ? <Empty>No redemptions this month, so no payouts.</Empty> : (
+            <div className="space-y-3">
+              {payouts.map((p) => (
+                <div key={p.email} className="card">
+                  <div className="flex justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-bold">{p.creator_name} <span className="font-normal text-brown-soft">{p.social_handle}</span></div>
+                      <div className="text-sm text-brown-soft">{p.redemptions} diners spent {sgd(Number(p.diner_spend))}</div>
+                    </div>
+                    <div className="font-heading font-bold text-ok">{sgd(Number(p.payout))}</div>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </>
       )}
     </>

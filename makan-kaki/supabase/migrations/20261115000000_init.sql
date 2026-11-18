@@ -19,6 +19,14 @@ language sql immutable as $$ select case p_plan when 'hawker' then 99 when 'cafe
 create or replace function public.plan_visits(p_plan text) returns int
 language sql immutable as $$ select case p_plan when 'hawker' then 2 when 'cafe' then 5 end $$;
 
+-- Outlets pay 10% commission on each redeemed diner's bill.
+-- Creators earn a fifth of that commission (2% of the bill).
+create or replace function public.commission_rate() returns numeric
+language sql immutable as $$ select 0.10::numeric $$;
+
+create or replace function public.creator_rate() returns numeric
+language sql immutable as $$ select 0.02::numeric $$;
+
 -- ---------------------------------------------------------------
 -- Tables
 -- ---------------------------------------------------------------
@@ -91,6 +99,7 @@ create table public.redemptions (
   id uuid primary key default gen_random_uuid(),
   booking_id uuid not null references public.bookings(id) on delete cascade,
   redeemed_at timestamptz not null default now(),
+  bill_amount numeric(10, 2) not null check (bill_amount > 0 and bill_amount <= 5000), -- SGD, typed at the counter
   redeemed_by uuid references public.profiles(id) on delete set null
 );
 create index on public.redemptions (booking_id, redeemed_at);
@@ -343,7 +352,7 @@ end $$;
 create or replace function public.my_bookings()
 returns table (booking_id uuid, code text, status text, booked_at timestamptz, post_link text,
                slot_date date, start_time time, outlet_name text, address text, cuisine text,
-               redemptions bigint, code_valid_until date)
+               redemptions bigint, earnings numeric, code_valid_until date)
 language plpgsql security definer set search_path = public as $$
 begin
   perform mark_missed();
@@ -351,6 +360,8 @@ begin
     select b.id, b.code, b.status, b.booked_at, b.post_link, s.slot_date, s.start_time,
            o.name, o.address, o.cuisine,
            (select count(*) from redemptions r where r.booking_id = b.id),
+           -- the creator's 2% of every bill redeemed with this code
+           (select round(coalesce(sum(r.bill_amount), 0) * creator_rate(), 2) from redemptions r where r.booking_id = b.id),
            s.slot_date + 30
     from bookings b join visit_slots s on s.id = b.slot_id join outlets o on o.id = s.outlet_id
     where b.creator_id = auth.uid()
@@ -382,13 +393,17 @@ end $$;
 -- Redeem a diner's code at the counter. Returns true if it counted.
 -- Unknown code, another outlet's code, cancelled booking, or more than
 -- 30 days after the visit all return false ("Code not found").
-create or replace function public.redeem_code(p_code text) returns boolean
+-- p_bill is the diner's bill in SGD; the outlet pays 10% of it as commission.
+create or replace function public.redeem_code(p_code text, p_bill numeric) returns boolean
 language plpgsql security definer set search_path = public as $$
 declare
   outlet uuid := my_counter_outlet();
   bid uuid;
 begin
   if outlet is null then raise exception 'Not allowed'; end if;
+  if p_bill is null or p_bill <= 0 or p_bill > 5000 or p_bill <> round(p_bill, 2) then
+    raise exception 'Enter the bill amount, e.g. 8.50';
+  end if;
   select b.id into bid
   from bookings b join visit_slots s on s.id = b.slot_id
   where b.code = upper(trim(p_code))
@@ -396,7 +411,7 @@ begin
     and b.status <> 'cancelled'
     and sg_today() <= s.slot_date + 30;
   if bid is null then return false; end if;
-  insert into redemptions (booking_id, redeemed_by) values (bid, auth.uid());
+  insert into redemptions (booking_id, bill_amount, redeemed_by) values (bid, p_bill, auth.uid());
   return true;
 end $$;
 
@@ -404,7 +419,7 @@ end $$;
 create or replace function public.owner_bookings()
 returns table (booking_id uuid, code text, status text, booked_at timestamptz, post_link text,
                slot_date date, start_time time, creator_name text, social_handle text, platform text,
-               redemptions_month bigint, redemptions_total bigint)
+               redemptions_month bigint, redemptions_total bigint, spend_month numeric, spend_total numeric)
 language plpgsql security definer set search_path = public as $$
 declare
   outlet uuid := my_owned_outlet();
@@ -417,7 +432,10 @@ begin
            p.name, c.social_handle, c.platform,
            (select count(*) from redemptions r where r.booking_id = b.id
               and (r.redeemed_at at time zone 'Asia/Singapore')::date >= m),
-           (select count(*) from redemptions r where r.booking_id = b.id)
+           (select count(*) from redemptions r where r.booking_id = b.id),
+           (select coalesce(sum(r.bill_amount), 0) from redemptions r where r.booking_id = b.id
+              and (r.redeemed_at at time zone 'Asia/Singapore')::date >= m),
+           (select coalesce(sum(r.bill_amount), 0) from redemptions r where r.booking_id = b.id)
     from bookings b
     join visit_slots s on s.id = b.slot_id
     join creators c on c.id = b.creator_id
@@ -500,7 +518,7 @@ end $$;
 create or replace function public.admin_outlets()
 returns table (id uuid, name text, address text, hdb_town text, cuisine text, plan text,
                owner_name text, owner_email text, owner_phone text,
-               open_slots bigint, bookings_month bigint, redemptions_month bigint)
+               open_slots bigint, bookings_month bigint, redemptions_month bigint, spend_month numeric)
 language plpgsql security definer set search_path = public as $$
 declare m date := date_trunc('month', sg_today())::date;
 begin
@@ -511,6 +529,8 @@ begin
       (select count(*) from bookings b join visit_slots s on s.id = b.slot_id
         where s.outlet_id = o.id and b.status <> 'cancelled' and date_trunc('month', s.slot_date) = m),
       (select count(*) from redemptions r join bookings b on b.id = r.booking_id join visit_slots s on s.id = b.slot_id
+        where s.outlet_id = o.id and (r.redeemed_at at time zone 'Asia/Singapore')::date >= m),
+      (select coalesce(sum(r.bill_amount), 0) from redemptions r join bookings b on b.id = r.booking_id join visit_slots s on s.id = b.slot_id
         where s.outlet_id = o.id and (r.redeemed_at at time zone 'Asia/Singapore')::date >= m)
     from outlets o join profiles p on p.id = o.owner_id
     order by o.name;
@@ -519,7 +539,7 @@ end $$;
 create or replace function public.admin_bookings()
 returns table (booking_id uuid, code text, status text, booked_at timestamptz, post_link text,
                slot_date date, start_time time, outlet_name text, hdb_town text,
-               creator_name text, social_handle text, platform text, redemptions bigint)
+               creator_name text, social_handle text, platform text, redemptions bigint, spend numeric)
 language plpgsql security definer set search_path = public as $$
 begin
   perform assert_admin();
@@ -527,7 +547,8 @@ begin
   return query
     select b.id, b.code, b.status, b.booked_at, b.post_link, s.slot_date, s.start_time,
            o.name, o.hdb_town, p.name, c.social_handle, c.platform,
-           (select count(*) from redemptions r where r.booking_id = b.id)
+           (select count(*) from redemptions r where r.booking_id = b.id),
+           (select coalesce(sum(r.bill_amount), 0) from redemptions r where r.booking_id = b.id)
     from bookings b
     join visit_slots s on s.id = b.slot_id
     join outlets o on o.id = s.outlet_id
@@ -560,10 +581,12 @@ begin
   where id = p_id and status <> 'cancelled';
 end $$;
 
--- One row per outlet for the chosen month (any day in that month).
+-- One row per outlet for the chosen month (any day in that month):
+-- plan fee + 10% commission on diners' bills. creator_payouts is the
+-- part of the commission passed on to creators (a fifth, i.e. 2% of bills).
 create or replace function public.admin_billing(p_month date)
 returns table (outlet_name text, plan text, plan_fee numeric, redemptions bigint,
-               redemption_fees numeric, total_owed numeric)
+               diner_spend numeric, commission numeric, total_owed numeric, creator_payouts numeric)
 language plpgsql security definer set search_path = public as $$
 declare
   m_start date := date_trunc('month', p_month)::date;
@@ -572,17 +595,45 @@ begin
   perform assert_admin();
   return query
     with r as (
-      select o.id, o.name, o.plan,
-        (select count(*) from redemptions x join bookings b on b.id = x.booking_id
-           join visit_slots s on s.id = b.slot_id
-         where s.outlet_id = o.id
-           and (x.redeemed_at at time zone 'Asia/Singapore')::date >= m_start
-           and (x.redeemed_at at time zone 'Asia/Singapore')::date < m_end) as n
+      select o.id, o.name, o.plan, count(x.id) as n, coalesce(sum(x.bill_amount), 0) as spend
       from outlets o
+      left join visit_slots s on s.outlet_id = o.id
+      left join bookings b on b.slot_id = s.id
+      left join redemptions x on x.booking_id = b.id
+        and (x.redeemed_at at time zone 'Asia/Singapore')::date >= m_start
+        and (x.redeemed_at at time zone 'Asia/Singapore')::date < m_end
       where o.created_at < (m_end::timestamp at time zone 'Asia/Singapore')
+      group by o.id, o.name, o.plan
     )
-    select r.name, r.plan, plan_fee(r.plan), r.n, r.n * 1.00, plan_fee(r.plan) + r.n * 1.00
+    select r.name, r.plan, plan_fee(r.plan), r.n, r.spend,
+           round(r.spend * commission_rate(), 2),
+           plan_fee(r.plan) + round(r.spend * commission_rate(), 2),
+           round(r.spend * creator_rate(), 2)
     from r order by r.name;
+end $$;
+
+-- One row per creator for the chosen month: what Makan Kaki pays them
+-- (2% of the bills redeemed with their codes). Paid manually, e.g. by PayNow.
+create or replace function public.admin_creator_payouts(p_month date)
+returns table (creator_name text, social_handle text, email text, phone text,
+               redemptions bigint, diner_spend numeric, payout numeric)
+language plpgsql security definer set search_path = public as $$
+declare
+  m_start date := date_trunc('month', p_month)::date;
+  m_end date := (date_trunc('month', p_month) + interval '1 month')::date;
+begin
+  perform assert_admin();
+  return query
+    select p.name, c.social_handle, p.email, p.phone, count(x.id), sum(x.bill_amount),
+           round(sum(x.bill_amount) * creator_rate(), 2)
+    from redemptions x
+    join bookings b on b.id = x.booking_id
+    join creators c on c.id = b.creator_id
+    join profiles p on p.id = c.id
+    where (x.redeemed_at at time zone 'Asia/Singapore')::date >= m_start
+      and (x.redeemed_at at time zone 'Asia/Singapore')::date < m_end
+    group by p.name, c.social_handle, p.email, p.phone
+    order by p.name;
 end $$;
 
 -- ---------------------------------------------------------------

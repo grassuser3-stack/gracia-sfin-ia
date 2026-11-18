@@ -58,10 +58,16 @@ export function sgd(n: number) {
   return 'S$' + n.toFixed(2)
 }
 
-/** (plan fee + S$1 × redemptions) ÷ redemptions, or null when there are none. */
-export function costPerDiner(plan: Plan, redemptions: number): number | null {
+/** Outlets pay 10% of each redeemed diner's bill; creators get a fifth of that (2%). */
+export const COMMISSION_RATE = 0.1
+export const CREATOR_RATE = 0.02
+
+export const round2 = (n: number) => Math.round(n * 100) / 100
+
+/** (plan fee + 10% of diners' bills) ÷ redemptions, or null when there are none. */
+export function costPerDiner(plan: Plan, redemptions: number, spend: number): number | null {
   if (redemptions <= 0) return null
-  return (PLANS[plan].fee + redemptions) / redemptions
+  return (PLANS[plan].fee + round2(spend * COMMISSION_RATE)) / redemptions
 }
 
 export function daysBetween(fromYmd: string, toYmd: string) {

@@ -12,14 +12,14 @@ npm run dev
 Open http://localhost:5173. To try it on your phone, use the same Wi-Fi and run `npm run dev -- --host`.
 
 ## Demo accounts
-The login page lists one-tap demo logins for every role. All of them use the password `makan123`.
+The login page lists one-tap demo logins for owners, creators and the admin. All accounts use the password `makan123`.
 
 | Account | Role |
 |---|---|
 | admin@makankaki.test | Admin (founder) |
 | owner@makankaki.test | Owner of Xiao Nong Tian (Hawker plan, Woodlands) |
 | cafe@makankaki.test | Owner of All Hands Café (Café plan, Woodlands) |
-| staff@makankaki.test | Counter staff at Xiao Nong Tian |
+| staff@makankaki.test | Counter staff at Xiao Nong Tian (only the Redeem screen), not listed on the login page |
 | foodieboonie@gmail.com | Zelia (@foodieboonie on Instagram), approved creator in Woodlands |
 | priya@makankaki.test | Approved creator in Tampines |
 | wei@makankaki.test | Creator waiting for approval |
@@ -53,9 +53,12 @@ You can also sign up new owners, creators and staff.
 These rules are enforced inside the database by Postgres row-level security, not only by hiding screens. Every query runs as the logged-in user.
 
 ## Business rules
-- **Plans:** Hawker is S$99 a month for 2 creator visits. Café is S$299 a month for 5 creator visits. Every redeemed code costs S$1.
+- **Plans:** Hawker is S$99 a month for 2 creator visits. Café is S$299 a month for 5 creator visits.
   - When an outlet's visits for a month are all booked, its other slots that month are hidden.
-- **Cost per diner** = (plan fee + S$1 × redemptions this month) ÷ redemptions this month. With no redemptions it shows "No redemptions yet".
+- **Commission:** when staff redeem a code they also type the diner's bill (S$0.01–S$5,000). The outlet pays **10% of every redeemed bill** on top of its plan.
+- **Creators earn a fifth of that commission**, which is **2% of the bill**. Makan Kaki keeps the other 8%. Creators see their earnings on My bookings. The admin billing page exports a creator payouts CSV so they can be paid manually.
+- **Each month an outlet owes** plan fee + 10% of that month's redeemed bills.
+- **Cost per diner** = (plan fee + 10% of bills this month) ÷ redemptions this month. With no redemptions it shows "No redemptions yet".
 - **Codes** look like `AA-ZELIA-4821`.
   - They are unique and not case-sensitive.
   - They work from booking until 30 days after the visit date, unless the booking is cancelled.
@@ -71,7 +74,7 @@ These rules are enforced inside the database by Postgres row-level security, not
 ```bash
 npm run test:db
 ```
-This runs 66 checks covering permissions, double-booking, plan limits, codes, the 30-day window, missed posts, staff access and billing.
+This runs 78 checks covering permissions, double-booking, plan limits, codes, the 30-day window, missed posts, staff access and billing.
 
 ## Where things are
 | What | Where |

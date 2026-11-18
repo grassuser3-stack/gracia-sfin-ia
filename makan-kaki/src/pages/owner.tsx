@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { supabase, errorText } from '../lib/supabase'
-import { costPerDiner, fmtDate, fmtDateLong, fmtDateTime, fmtMonth, fmtTime, PLANS, sgd, sgMonth, sgToday, type Plan } from '../lib/format'
+import { COMMISSION_RATE, costPerDiner, fmtDate, fmtDateLong, fmtDateTime, fmtMonth, fmtTime, PLANS, round2, sgd, sgMonth, sgToday, type Plan } from '../lib/format'
 import { Alert, Empty, Field, PageTitle, Spinner, Stat, StatusChip } from '../components/ui'
 
 type Outlet = { id: string; name: string; address: string; hdb_town: string; cuisine: string; plan: Plan }
 type OwnerBooking = {
   booking_id: string; code: string; status: string; booked_at: string; post_link: string | null
   slot_date: string; start_time: string; creator_name: string; social_handle: string; platform: string
-  redemptions_month: number; redemptions_total: number
+  redemptions_month: number; redemptions_total: number; spend_month: string; spend_total: string
 }
 type Slot = { id: string; slot_date: string; start_time: string; status: 'open' | 'booked' }
 
@@ -42,7 +42,9 @@ export function OwnerDashboard() {
   const live = rows.filter((r) => r.status !== 'cancelled')
   const upcoming = live.filter((r) => r.slot_date >= today && r.status === 'booked').sort((a, b) => (a.slot_date + a.start_time).localeCompare(b.slot_date + b.start_time))
   const redemptionsMonth = rows.reduce((s, r) => s + Number(r.redemptions_month), 0)
-  const cpd = costPerDiner(outlet.plan, redemptionsMonth)
+  const spendMonth = rows.reduce((s, r) => s + Number(r.spend_month), 0)
+  const commissionMonth = round2(spendMonth * COMMISSION_RATE)
+  const cpd = costPerDiner(outlet.plan, redemptionsMonth, spendMonth)
   const plan = PLANS[outlet.plan]
   const visitsThisMonth = live.filter((r) => r.slot_date.startsWith(month)).length
   const results = rows
@@ -59,7 +61,18 @@ export function OwnerDashboard() {
       <div className="grid grid-cols-2 gap-3">
         <Stat label={`Diners in ${fmtMonth(month).split(' ')[0]}`} value={redemptionsMonth} note="Codes redeemed this month" />
         <Stat label="Cost per diner" value={cpd === null ? <span className="text-base">No redemptions yet</span> : sgd(cpd)}
-          note={`S$${plan.fee} plan + S$1 per diner`} />
+          note={`S$${plan.fee} plan + 10% of diners' bills`} />
+      </div>
+      <div className="mt-3 card grid grid-cols-2 gap-3">
+        <div>
+          <div className="text-sm font-semibold text-brown-soft">Spent by these diners</div>
+          <div className="font-heading text-xl font-bold">{sgd(spendMonth)}</div>
+        </div>
+        <div>
+          <div className="text-sm font-semibold text-brown-soft">You pay this month</div>
+          <div className="font-heading text-xl font-bold">{sgd(plan.fee + commissionMonth)}</div>
+          <div className="text-xs text-brown-soft">{sgd(plan.fee)} plan + {sgd(commissionMonth)} commission</div>
+        </div>
       </div>
       <div className="mt-3 card flex items-center justify-between">
         <div>
@@ -96,7 +109,7 @@ export function OwnerDashboard() {
               </div>
               <div className="text-right">
                 <div className="font-heading text-2xl font-bold">{r.redemptions_month}</div>
-                <div className="text-xs text-brown-soft">diners</div>
+                <div className="text-xs text-brown-soft">diners · {sgd(Number(r.spend_month))}</div>
               </div>
             </Link>
           ))}
@@ -122,8 +135,8 @@ export function OwnerBookingDetail() {
         <Row k="Post link" v={b.post_link ? <a href={b.post_link} target="_blank" rel="noreferrer" className="link break-all">Open post</a> : <span className="text-brown-soft">Not submitted yet</span>} />
       </div>
       <div className="mt-3 grid grid-cols-2 gap-3">
-        <Stat label="Diners this month" value={b.redemptions_month} />
-        <Stat label="Diners all time" value={b.redemptions_total} />
+        <Stat label="Diners this month" value={b.redemptions_month} note={`${sgd(Number(b.spend_month))} spent`} />
+        <Stat label="Diners all time" value={b.redemptions_total} note={`${sgd(Number(b.spend_total))} spent`} />
       </div>
     </>
   )
@@ -208,46 +221,84 @@ export function ManageSlots() {
   )
 }
 
-/** One big box, one big button. Used by owners and staff. */
+/** Parse "8.5", "8.50" or "$8.50" into a bill amount, or null if it isn't one. */
+function parseBill(text: string): number | null {
+  const t = text.trim().replace(/^S?\$/i, '')
+  if (!/^\d{1,4}(\.\d{1,2})?$/.test(t)) return null
+  const n = Number(t)
+  return n > 0 && n <= 5000 ? n : null
+}
+
+/** Code box, bill box, one big button. Used by owners and staff. */
 export function RedeemCode({ outletName }: { outletName?: string }) {
   const [code, setCode] = useState('')
+  const [bill, setBill] = useState('')
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<{ ok: boolean; code: string } | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const [result, setResult] = useState<{ kind: 'ok' | 'notfound' | 'bill'; code: string; bill?: number } | null>(null)
+  const codeRef = useRef<HTMLInputElement>(null)
+  const billRef = useRef<HTMLInputElement>(null)
 
   async function submit(e: FormEvent) {
     e.preventDefault()
     const c = code.trim()
-    if (!c) return
+    if (!c) { codeRef.current?.focus(); return }
+    const amount = parseBill(bill)
+    if (amount === null) {
+      if (bill.trim()) setResult({ kind: 'bill', code: c.toUpperCase() })
+      billRef.current?.focus()
+      return
+    }
     setBusy(true)
-    const { data, error } = await supabase.rpc('redeem_code', { p_code: c })
+    const { data, error } = await supabase.rpc('redeem_code', { p_code: c, p_bill: amount })
     setBusy(false)
-    setResult({ ok: !error && data === true, code: c.toUpperCase() })
+    if (error?.message.includes('bill amount')) { setResult({ kind: 'bill', code: c.toUpperCase() }); billRef.current?.focus(); return }
+    const ok = !error && data === true
+    setResult({ kind: ok ? 'ok' : 'notfound', code: c.toUpperCase(), bill: amount })
     setCode('')
-    inputRef.current?.focus()
+    if (ok) setBill('') // on "not found", keep the bill so only the code needs retyping
+    codeRef.current?.focus()
   }
 
+  const big = 'w-full rounded-2xl border-4 border-brown-line bg-white px-4 text-center font-bold text-brown placeholder:text-brown-line focus:border-orange focus:outline-none'
   return (
     <div className="flex min-h-[70vh] flex-col">
       <PageTitle title="Redeem code" subtitle={outletName ?? "Type the diner's code"} />
       <form onSubmit={submit} className="flex flex-1 flex-col gap-4">
         <input
-          ref={inputRef}
+          ref={codeRef}
           autoFocus
           aria-label="Diner's code"
-          className="w-full rounded-2xl border-4 border-brown-line bg-white px-4 py-6 text-center font-mono text-3xl font-bold uppercase tracking-wider text-brown placeholder:text-brown-line focus:border-orange focus:outline-none"
+          className={`${big} py-5 font-mono text-3xl uppercase tracking-wider`}
           placeholder="AA-NAME-1234"
           autoCapitalize="characters"
           autoCorrect="off"
           autoComplete="off"
           spellCheck={false}
+          enterKeyHint="next"
           value={code}
           onChange={(e) => { setCode(e.target.value); setResult(null) }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !bill.trim()) { e.preventDefault(); billRef.current?.focus() } }}
         />
+        <label className="relative block">
+          <span className="sr-only">Diner's bill in Singapore dollars</span>
+          <span aria-hidden className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 font-heading text-2xl font-bold text-brown-soft">S$</span>
+          <input
+            ref={billRef}
+            className={`${big} py-4 pl-16 text-3xl`}
+            placeholder="Bill e.g. 8.50"
+            inputMode="decimal"
+            autoComplete="off"
+            enterKeyHint="done"
+            value={bill}
+            onChange={(e) => { setBill(e.target.value); setResult(null) }}
+          />
+        </label>
         {result && (
-          <div role="status" className={`rounded-2xl px-4 py-5 text-center text-xl font-bold text-white ${result.ok ? 'bg-ok' : 'bg-bad'}`}>
-            {result.ok ? '✓ Code redeemed' : '✕ Code not found'}
-            <div className="mt-1 font-mono text-base font-semibold opacity-90">{result.code}</div>
+          <div role="status" className={`rounded-2xl px-4 py-5 text-center text-xl font-bold text-white ${result.kind === 'ok' ? 'bg-ok' : 'bg-bad'}`}>
+            {result.kind === 'ok' ? '✓ Code redeemed' : result.kind === 'notfound' ? '✕ Code not found' : '✕ Enter the bill amount, e.g. 8.50'}
+            <div className="mt-1 font-mono text-base font-semibold opacity-90">
+              {result.code}{result.kind === 'ok' && result.bill !== undefined ? ` · ${sgd(result.bill)}` : ''}
+            </div>
           </div>
         )}
         <button className="btn-primary mt-auto min-h-[72px] w-full text-2xl" disabled={busy || !code.trim()}>

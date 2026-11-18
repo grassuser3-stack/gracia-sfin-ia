@@ -40,7 +40,7 @@ export function Landing() {
         {[
           ['1', 'Owners post visit slots', 'Pick a date and time a creator can come film.'],
           ['2', 'Creators book a makan', 'Approved creators in your HDB town book in under a minute and get a code like AA-ZELIA-4821.'],
-          ['3', 'Diners show the code', 'Staff type it in at the counter. Each code counts as one diner.'],
+          ['3', 'Diners show the code', 'Staff type the code and the bill at the counter. Each code counts as one diner, and the creator earns 2% of the bill.'],
           ['4', 'See what worked', 'Your dashboard shows diners per creator post and your cost per diner.'],
         ].map(([n, t, d]) => (
           <div key={n} className="card flex gap-4">
@@ -60,7 +60,7 @@ export function Landing() {
             <div key={p} className="card">
               <div className="font-heading font-bold">{PLANS[p].label}</div>
               <div className="mt-1 font-heading text-2xl font-extrabold">S${PLANS[p].fee}<span className="text-sm font-semibold text-brown-soft">/mo</span></div>
-              <div className="mt-1 text-sm text-brown-soft">{PLANS[p].visits} creator visits a month, plus S$1 per diner redeemed</div>
+              <div className="mt-1 text-sm text-brown-soft">{PLANS[p].visits} creator visits a month, plus 10% of each redeemed diner's bill</div>
             </div>
           ))}
         </div>

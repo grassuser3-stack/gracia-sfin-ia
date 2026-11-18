@@ -106,11 +106,11 @@ ok((await asErr(null, `select * from outlets`)) !== null || (await as(null, `sel
 ok(!!(await asErr(null, `select * from open_slots_for_me()`)), 'anon cannot call functions')
 
 // --- redeem ---
-ok((await as(owner1, `select redeem_code($1) r`, [bk1.code.toLowerCase()]))[0].r === true, 'redeem lowercase code works')
-ok((await as(owner1, `select redeem_code($1) r`, ['  ' + bk1.code + ' ']))[0].r === true, 'redeem with spaces works')
-ok((await as(owner2, `select redeem_code($1) r`, [bk1.code]))[0].r === false, "other outlet's code -> not found")
-ok((await as(owner1, `select redeem_code('AA-NOPE-0000') r`))[0].r === false, 'unknown code -> not found')
-ok(!!(await asErr(cA, `select redeem_code($1)`, [bk1.code])), 'creator cannot redeem')
+ok((await as(owner1, `select redeem_code($1, 10) r`, [bk1.code.toLowerCase()]))[0].r === true, 'redeem lowercase code works')
+ok((await as(owner1, `select redeem_code($1, 10) r`, ['  ' + bk1.code + ' ']))[0].r === true, 'redeem with spaces works')
+ok((await as(owner2, `select redeem_code($1, 10) r`, [bk1.code]))[0].r === false, "other outlet's code -> not found")
+ok((await as(owner1, `select redeem_code('AA-NOPE-0000', 10) r`))[0].r === false, 'unknown code -> not found')
+ok(!!(await asErr(cA, `select redeem_code($1, 10)`, [bk1.code])), 'creator cannot redeem')
 ok((await as(owner1, `select redemptions_month::int n from owner_bookings() where code = $1`, [bk1.code]))[0].n === 2, 'redemption count = 2')
 ok((await as(cA, `select redemptions::int n from my_bookings()`))[0].n === 2, 'creator sees own count')
 ok((await as(cB, `select count(*)::int n from redemptions`))[0].n === 0, "creator can't see others' redemptions")
@@ -122,21 +122,21 @@ await as(owner1, `select add_staff('staff3@test.local')`)
 ok((await asErr(owner1, `select add_staff('staff4@test.local')`))?.includes('up to 3'), 'max 3 staff')
 const st = await signup('staff1@test.local', { role: 'staff', name: 'Kumar' })
 ok((await as(st, `select claim_staff_access() n`))[0].n === 'Ah Seng Noodle', 'staff linked to outlet')
-ok((await as(st, `select redeem_code($1) r`, [bk2.code]))[0].r === true, 'staff can redeem')
+ok((await as(st, `select redeem_code($1, 10) r`, [bk2.code]))[0].r === true, 'staff can redeem')
 ok((await as(st, `select count(*)::int n from bookings`))[0].n === 0, 'staff cannot see bookings')
 ok((await as(st, `select count(*)::int n from redemptions`))[0].n === 0, 'staff cannot see redemptions')
 ok(!!(await asErr(st, `select * from owner_bookings()`)), 'staff cannot see dashboard data')
-ok((await as(owner2, `select redeem_code($1) r`, [bk2.code]))[0].r === false, "staff code isn't redeemable at other outlet")
+ok((await as(owner2, `select redeem_code($1, 10) r`, [bk2.code]))[0].r === false, "staff code isn't redeemable at other outlet")
 const rando = await signup('rando@test.local', { role: 'staff', name: 'R' })
 ok((await as(rando, `select claim_staff_access() n`))[0].n === null, 'uninvited staff has no outlet')
-ok(!!(await asErr(rando, `select redeem_code($1)`, [bk2.code])), 'uninvited staff cannot redeem')
+ok(!!(await asErr(rando, `select redeem_code($1, 10)`, [bk2.code])), 'uninvited staff cannot redeem')
 await as(owner1, `delete from staff_members where email = 'staff1@test.local'`)
-ok(!!(await asErr(st, `select redeem_code($1)`, [bk2.code])), 'removed staff loses access')
+ok(!!(await asErr(st, `select redeem_code($1, 10)`, [bk2.code])), 'removed staff loses access')
 
 // --- cancel ---
 await as(admin, `select admin_cancel_booking($1)`, [bk1.booking_id])
 ok((await q(`select status from visit_slots where id=$1`, [s1]))[0].status === 'open', 'cancel reopens future slot')
-ok((await as(owner1, `select redeem_code($1) r`, [bk1.code]))[0].r === false, 'cancelled code stops working')
+ok((await as(owner1, `select redeem_code($1, 10) r`, [bk1.code]))[0].r === false, 'cancelled code stops working')
 ok((await as(cB, `select count(*)::int n from open_slots_for_me()`))[0].n === 2, 'after cancel, visits left again and slots reappear')
 
 // --- 30-day window, missed, post link (direct inserts as superuser) ---
@@ -147,8 +147,8 @@ async function pastBooking(daysAgo, code, creator = cA) {
 }
 await pastBooking(31, 'AA-OLD-0031')
 await pastBooking(30, 'AA-OLD-0030')
-ok((await as(owner1, `select redeem_code('AA-OLD-0031') r`))[0].r === false, 'code 31 days after visit -> not found')
-ok((await as(owner1, `select redeem_code('AA-OLD-0030') r`))[0].r === true, 'code exactly 30 days after visit -> ok')
+ok((await as(owner1, `select redeem_code('AA-OLD-0031', 10) r`))[0].r === false, 'code 31 days after visit -> not found')
+ok((await as(owner1, `select redeem_code('AA-OLD-0030', 10) r`))[0].r === true, 'code exactly 30 days after visit -> ok')
 const m8 = await pastBooking(8, 'AA-MISS-0008')
 const p3 = await pastBooking(3, 'AA-POST-0003')
 const mine = await as(cA, `select booking_id, status from my_bookings()`)
@@ -160,15 +160,31 @@ await as(cA, `select submit_post_link($1, 'https://www.tiktok.com/@jason/video/1
 ok((await q(`select status from bookings where id=$1`, [p3]))[0].status === 'completed', 'post link -> completed')
 ok((await asErr(cA, `select submit_post_link($1, 'https://tiktok.com/x')`, [m8]))?.includes('7-day'), 'missed booking cannot submit')
 ok((await asErr(cB, `select submit_post_link($1, 'https://tiktok.com/x')`, [bk2.booking_id]))?.includes('on or after'), 'cannot submit before visit date')
-ok((await as(owner1, `select redeem_code('AA-MISS-0008') r`))[0].r === true, 'missed booking code still redeemable within 30 days')
+ok((await as(owner1, `select redeem_code('AA-MISS-0008', 10) r`))[0].r === true, 'missed booking code still redeemable within 30 days')
 await as(admin, `select admin_cancel_booking($1)`, [m8])
 ok((await q(`select s.status from visit_slots s join bookings b on b.slot_id = s.id where b.id=$1`, [m8]))[0].status === 'booked', 'cancel does not reopen past slot')
+
+// --- bill amounts and commission ---
+for (const bad of ['0', '-5', '1.234', '5000.01', 'null']) {
+  ok((await asErr(owner1, `select redeem_code($1, ${bad})`, [bk2.code]))?.includes('bill amount'), `bill ${bad} rejected`)
+}
+ok((await as(owner1, `select redeem_code($1, 23.45) r`, [bk2.code]))[0].r === true, 'redeem with a real bill amount')
+const bee = (await as(cB, `select earnings from my_bookings() where code = $1`, [bk2.code]))[0]
+ok(Number(bee.earnings) === 0.67, 'creator earns 2% of bills (10 + 23.45 -> 0.67)', bee.earnings)
+const ownerSpend = (await as(owner1, `select spend_month from owner_bookings() where code = $1`, [bk2.code]))[0]
+ok(Number(ownerSpend.spend_month) === 33.45, 'owner sees diner spend per post', ownerSpend.spend_month)
 
 // --- billing ---
 const bill = await as(admin, `select * from admin_billing(sg_today())`)
 const b1 = bill.find(r => r.outlet_name === 'Ah Seng Noodle')
-const n1 = (await q(`select count(*)::int n from redemptions r join bookings b on b.id=r.booking_id join visit_slots s on s.id=b.slot_id where s.outlet_id=$1`, [o1]))[0].n
-ok(bill.length === 2 && Number(b1.redemptions) === n1 && Number(b1.total_owed) === 99 + n1, 'billing row per outlet', JSON.stringify(b1))
+const [{ n1, s1sum }] = await q(`select count(*)::int n1, sum(bill_amount)::float s1sum from redemptions r join bookings b on b.id=r.booking_id join visit_slots s on s.id=b.slot_id where s.outlet_id=$1`, [o1])
+const commission = Math.round(s1sum * 10) / 100
+ok(bill.length === 2 && Number(b1.redemptions) === n1 && Number(b1.diner_spend) === s1sum, 'billing counts redemptions and spend', JSON.stringify(b1))
+ok(Number(b1.commission) === commission && Number(b1.total_owed) === Math.round((99 + commission) * 100) / 100, 'owed = plan fee + 10% of bills')
+ok(Number(b1.creator_payouts) === Math.round(s1sum * 2) / 100, 'creator payouts = 2% of bills (a fifth of commission)')
+const payouts = await as(admin, `select * from admin_creator_payouts(sg_today())`)
+ok(payouts.reduce((t, p) => t + Number(p.payout), 0).toFixed(2) === (s1sum * 0.02).toFixed(2), 'per-creator payouts add up', JSON.stringify(payouts.map(p => [p.creator_name, p.payout])))
+ok(!!(await asErr(cA, `select * from admin_creator_payouts(sg_today())`)), 'creator cannot see payout list')
 ok(Number(bill.find(r => r.outlet_name === 'Mei Cafe').total_owed) === 299, 'cafe with no redemptions owes 299')
 ok((await as(admin, `select count(*)::int n from admin_billing((sg_today() - interval '2 month')::date)`))[0].n === 0, 'billing excludes outlets not yet created')
 ok(!!(await asErr(owner1, `select * from admin_billing(sg_today())`)), 'owner cannot export billing')
